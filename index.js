@@ -1,237 +1,267 @@
-<<<<<<< HEAD
-const express = require("express");
-const { Client, GatewayIntentBits } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require('discord.js');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json());
-
-// ================= LIVE STATE =================
-
-let cup = {
-  games: {},
-  overall: {},
-  currentGame: ""
-};
-
-// ================= WEBSITE API =================
-
-app.get("/data", (req, res) => {
-  res.json(cup);
-});
-
-// prevent caching (VERY IMPORTANT for live updates)
-app.use((req, res, next) => {
-  res.set("Cache-Control", "no-store");
-  next();
-});
-
-app.listen(PORT, () => {
-  console.log("SERVER RUNNING:", PORT);
-});
-
-// ================= DISCORD BOT =================
-=======
-const { Client, GatewayIntentBits } = require('discord.js');
-const axios = require('axios');
-
-// 🌍 YOUR HOSTED SERVER (Render)
-const API = "https://cup-live.onrender.com";
-
-// 🔐 TOKEN COMES FROM ENV (NOT CODE)
 const TOKEN = process.env.TOKEN;
->>>>>>> 7980d7a (clean CUP LIVE initial upload (no secrets))
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-<<<<<<< HEAD
-const TOKEN = process.env.TOKEN;
-
-// ensure game exists
-function initGame(game) {
-  if (!cup.games[game]) {
-    cup.games[game] = {
-      leaderboard: {},
-      bracket: {},
-      matches: {}
-    };
-  }
-}
-
-// ================= INTERACTIONS =================
-
-client.on("interactionCreate", async (i) => {
-  if (!i.isChatInputCommand()) return;
-
-  // 🏆 START GAME
-  if (i.commandName === "start") {
-    const game = i.options.getString("game");
-    const bracket = i.options.getBoolean("bracket") || false;
-
-    cup.currentGame = game;
-    cup.bracketMode = bracket;
-
-    initGame(game);
-
-    return i.reply(
-`🏆 CUP LIVE STARTED
-🎮 ${game}
-📊 https://cup-live.onrender.com/overlay.html`
-    );
-  }
-
-  // 📊 SCORE
-  if (i.commandName === "score") {
-    const user = i.options.getUser("user");
-    const points = i.options.getInteger("points");
-
-    if (!cup.currentGame) {
-      return i.reply("No game started");
-    }
-
-    initGame(cup.currentGame);
-
-    const game = cup.games[cup.currentGame];
-
-    // leaderboard
-    if (!game.leaderboard[user.id]) {
-      game.leaderboard[user.id] = {
-=======
-// 🏆 CUP STATE
+// 🌠 STATE
 let cup = {
-  game: "none",
   round: 1,
-  scores: {}
+  game: null,
+  active: false,
+  locked: true,
+  page: 0,
+  messageId: null,
+  channelId: null,
+
+  scores: {},        // total cup scores
+  roundScores: {},   // per round scores
+  bracket: [],        // elimination list
+  mvp: null
 };
 
-// 🔐 Admin / Ref check
+function safeUser(id) {
+  if (!cup.scores[id]) cup.scores[id] = 0;
+  if (!cup.roundScores[id]) cup.roundScores[id] = 0;
+}
+
+// 🧑‍⚖️ REF CHECK
 function isRef(member) {
   return member.permissions.has("Administrator") ||
          member.permissions.has("ManageGuild");
 }
 
-// 📡 Sync to Render server
-async function sync() {
+// 🏆 INIT PLAYER
+function ensurePlayer(id) {
+  if (!cup.scores[id]) cup.scores[id] = 0;
+  if (!cup.roundScores[id]) cup.roundScores[id] = 0;
+}
+
+// 🌟 AUTO MVP DETECTION
+function calculateMVP() {
+  let bestId = null;
+  let bestScore = -1;
+
+  for (const [id, pts] of Object.entries(cup.roundScores)) {
+    if (pts > bestScore) {
+      bestScore = pts;
+      bestId = id;
+    }
+  }
+
+  cup.mvp = bestId;
+}
+
+// 🏟 BRACKET UPDATE (SIMPLE ELIMINATION)
+function updateBracket() {
+  const sorted = Object.entries(cup.scores)
+    .sort((a, b) => b[1] - a[1]);
+
+  // keep top 50% alive
+  const cut = Math.ceil(sorted.length / 2);
+
+  cup.bracket = sorted.slice(0, cut).map(x => x[0]);
+}
+
+// ✨ GLOW EFFECT (TEXT EMULATION)
+function glow(text) {
+  return `✨ **${text}** ✨`;
+}
+
+// 📊 LEADERBOARD
+function buildLeaderboard(page = 0) {
+  const sorted = Object.entries(cup.scores)
+    .sort((a, b) => b[1] - a[1]);
+
+  const perPage = 6;
+  const start = page * perPage;
+  const slice = sorted.slice(start, start + perPage);
+
+  let desc = "";
+
+  if (!slice.length) {
+    desc = "🌌 No competitors yet...\n";
+  } else {
+    slice.forEach(([id, pts], i) => {
+      const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${start + i + 1}`;
+      desc += `${medal} <@${id}> • **${pts} pts**\n`;
+    });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(glow(`COSMIC CUP — ROUND ${cup.round}`))
+    .setDescription(
+      `🎮 Game: **${cup.game || "None"}**\n\n` +
+      `━━━━━━━━━━━━━━\n` +
+      desc +
+      `━━━━━━━━━━━━━━\n\n` +
+      `👑 MVP (Round): ${cup.mvp ? `<@${cup.mvp}>` : "None"}`
+    )
+    .setColor(0xA855F7)
+    .setFooter({ text: "Cosmic Cup • Live Esports System" });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('prev')
+      .setLabel('⬅️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('next')
+      .setLabel('➡️')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embed, row };
+}
+
+// 🔄 UPDATE MESSAGE
+async function updateLeaderboard() {
   try {
-    await axios.post(`${API}/update`, cup);
-    console.log("SYNC OK");
+    if (!cup.messageId) return;
+
+    const channel = await client.channels.fetch(cup.channelId);
+    const msg = await channel.messages.fetch(cup.messageId);
+
+    const { embed, row } = buildLeaderboard(cup.page);
+
+    await msg.edit({ embeds: [embed], components: [row] });
   } catch (err) {
-    console.log("SYNC ERROR:", err.message);
+    console.log("⚠️ leaderboard update failed:", err.message);
   }
 }
 
-// ================= COMMANDS =================
-client.on('interactionCreate', async i => {
-  if (!i.isChatInputCommand()) return;
-
-  // 🎮 START GAME
-  if (i.commandName === 'start') {
-
-    if (!isRef(i.member))
-      return i.reply({ content: "Ref only", ephemeral: true });
-
-    cup.game = i.options.getString('game');
-
-    await sync();
-
-    return i.reply(`🏆 CUP LIVE started: ${cup.game}`);
-  }
-
-  // 🏆 SCORE COMMAND
-  if (i.commandName === 'score') {
-
-    if (!isRef(i.member))
-      return i.reply({ content: "Ref only", ephemeral: true });
-
-    const user = i.options.getUser('user');
-    const pts = i.options.getInteger('points');
-
-    if (!cup.scores[user.id]) {
-      cup.scores[user.id] = {
->>>>>>> 7980d7a (clean CUP LIVE initial upload (no secrets))
-        name: user.username,
-        points: 0
-      };
-    }
-
-<<<<<<< HEAD
-    // overall
-    if (!cup.overall[user.id]) {
-      cup.overall[user.id] = {
-        name: user.username,
-        points: 0
-      };
-    }
-
-    game.leaderboard[user.id].points += points;
-    cup.overall[user.id].points += points;
-
-    return i.reply(`📊 ${user.username} +${points} pts`);
-  }
-
-  // 🧩 BRACKET MATCH (1v1)
-  if (i.commandName === "score") {
-    const user = i.options.getUser("user");
-    const against = i.options.getUser("against");
-
-    if (!against || !cup.currentGame) return;
-
-    const game = cup.games[cup.currentGame];
-
-    const matchId = `${user.id}_vs_${against.id}`;
-
-    if (game.matches[matchId]) {
-      return i.reply("Match already played");
-    }
-
-    game.matches[matchId] = {
-      winner: user.username,
-      loser: against.username
-    };
-
-    if (!game.leaderboard[user.id]) {
-      game.leaderboard[user.id] = { name: user.username, points: 0 };
-    }
-
-    if (!cup.overall[user.id]) {
-      cup.overall[user.id] = { name: user.username, points: 0 };
-    }
-
-    game.leaderboard[user.id].points += 1;
-    cup.overall[user.id].points += 1;
-
-    return i.reply(`🏁 ${user.username} wins 1v1 match`);
-  }
-});
-
-client.once("ready", () => {
-  console.log("BOT ONLINE");
-});
-
-=======
-    cup.scores[user.id].points += pts;
-
-    await sync();
-
-    return i.reply(`+${pts} → ${user.username}`);
-  }
-
-  // 🏁 END ROUND
-  if (i.commandName === 'end') {
-    cup.round++;
-    await sync();
-    return i.reply("🏁 Round ended");
-  }
-});
-
-// 🤖 BOT READY
+// 🤖 READY
 client.once('ready', () => {
-  console.log(`🏆 CUP LIVE BOT ONLINE: ${client.user.tag}`);
+  console.log(`🌠 Cosmic Cup V3 ONLINE as ${client.user.tag}`);
+  console.log("🏆 Cup system fully loaded");
+  console.log("📊 Leaderboard active");
 });
 
-// 🔐 LOGIN
->>>>>>> 7980d7a (clean CUP LIVE initial upload (no secrets))
+client.on('interactionCreate', async interaction => {
+
+  // ================= COMMANDS =================
+  if (interaction.isChatInputCommand()) {
+
+    // 🚀 START
+    if (interaction.commandName === 'start') {
+
+      if (!isRef(interaction.member))
+        return interaction.reply({ content: "🚫 Ref only", ephemeral: true });
+
+      cup.game = interaction.options.getString('game');
+      cup.active = true;
+      cup.locked = false;
+      cup.page = 0;
+
+      const { embed, row } = buildLeaderboard(0);
+
+      const msg = await interaction.reply({
+        content: glow(`ROUND ${cup.round} STARTED`),
+        embeds: [embed],
+        components: [row],
+        fetchReply: true
+      });
+
+      cup.messageId = msg.id;
+      cup.channelId = interaction.channel.id;
+    }
+
+    // 🏆 SCORE
+    if (interaction.commandName === 'score') {
+
+      if (!isRef(interaction.member))
+        return interaction.reply({ content: "🚫 Ref only", ephemeral: true });
+
+      if (!cup.active || cup.locked)
+        return interaction.reply({ content: "🔒 Locked", ephemeral: true });
+
+      const user = interaction.options.getUser('user');
+      const pts = interaction.options.getInteger('points');
+
+      safeUser(user.id);
+
+      cup.scores[user.id] += pts;
+      cup.roundScores[user.id] = (cup.roundScores[user.id] || 0) + pts;
+
+      calculateMVP();
+      await updateLeaderboard();
+
+      return interaction.reply(`+${pts} → ${user.username}`);
+    }
+
+    // 🏁 END
+    if (interaction.commandName === 'end') {
+
+      calculateMVP();
+      updateBracket();
+
+      cup.roundScores = {};
+      cup.round++;
+      cup.locked = false;
+      cup.mvp = null;
+
+      return interaction.reply(
+        `🏁 Round ended\n👑 MVP: None\n🏟 Bracket updated`
+      );
+    }
+  }
+
+  // ================= BUTTONS =================
+  if (interaction.isButton()) {
+
+    if (interaction.customId === 'next') cup.page++;
+    if (interaction.customId === 'prev') cup.page = Math.max(0, cup.page - 1);
+
+    cup.page = Math.max(0, cup.page);
+
+    await updateLeaderboard();
+
+    return interaction.deferUpdate();
+  }
+
+});
+
+// ================= PAGINATION =================
+client.on('interactionCreate', async interaction => {
+
+  if (!interaction.isButton()) return;
+
+if (interaction.customId === 'next') {
+  cup.page++;
+}
+
+if (interaction.customId === 'prev') {
+  cup.page = Math.max(0, cup.page - 1);
+}
+
+// safety clamp
+cup.page = Math.max(0, cup.page);
+
+  await updateLeaderboard();
+
+  return interaction.deferUpdate();
+});
+
+// ================= Render Approved =================
+const express = require("express");
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("🏆 CUP LIVE BOT RUNNING");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("🌐 Web server running on", PORT);
+});
+
 client.login(TOKEN);
