@@ -121,6 +121,29 @@ if (i.commandName === "start") {
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
 
+  await i.deferReply();
+
+  cup.game = i.options.getString("game");
+  cup.currentGame = cup.game;
+
+  initGame(cup.game);
+  cup.previousRankings = {};
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🏆 CUP LIVE STARTED`)
+    .setDescription(`Game: ${cup.game}`)
+    .setColor(0x00ffcc);
+
+  const msg = await i.channel.send({ embeds: [embed] });
+
+  cup.leaderboardMessageId = msg.id;
+  cup.leaderboardChannelId = i.channel.id;
+
+  await sync();
+
+  return i.editReply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
+}
+
   // 🔥 reply FIRST (prevents 40060 error)
   await i.reply(`🏆 Starting CUP LIVE...`);
 
@@ -144,10 +167,10 @@ if (i.commandName === "start") {
 
   // 🔥 edit instead of replying again
   return i.editReply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
-}
+
   // 📊 SCORE
 
-if (i.commandName === "score") {
+  if (i.commandName === "score") {
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
 
