@@ -31,10 +31,6 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-client.on("interactionCreate", (i) => {
-  console.log("🔥 INTERACTION:", i.commandName);
-});
-
 const API = "https://cup-live.onrender.com";
 
 // ================= STATE =================
@@ -43,10 +39,14 @@ let cup = {
   game: "none",
   round: 1,
 
-  scores: {},        // overall leaderboard (YOU ALREADY USE THIS)
+  scores: {},
+
+  overall: {},          // 🔥 REQUIRED FIX
+  previousRankings: {}, // 🔥 REQUIRED FIX
+
   currentGame: "",
 
-  games: {},         // 🔥 REQUIRED (fixes your crash)
+  games: {},
 
   updatedAt: Date.now()
 };
@@ -131,6 +131,10 @@ async function updateLeaderboard(channel) {
   await msg.edit({ embeds: [embed] });
 }
 
+if (!cup.games) cup.games = {};
+if (!cup.overall) cup.overall = {};
+if (!cup.previousRankings) cup.previousRankings = {};
+
 // ================= COMMANDS =================
 
 client.on("interactionCreate", async (i) => {
@@ -138,29 +142,28 @@ client.on("interactionCreate", async (i) => {
 
   // 🏆 START
   if (i.commandName === "start") {
-    if (!isRef(i.member))
-      return i.reply({ content: "Ref only", ephemeral: true });
+  if (!isRef(i.member))
+    return i.reply({ content: "Ref only", ephemeral: true });
 
-    cup.game = i.options.getString("game");
-    cup.currentGame = cup.game;
+  cup.game = i.options.getString("game");
+  cup.currentGame = cup.game;
 
-    initGame(cup.game);
+  initGame(cup.game);
 
-    await sync();
+  const embed = new EmbedBuilder()
+    .setTitle(`🏆 CUP LIVE STARTED`)
+    .setDescription(`Game: ${cup.game}`)
+    .setColor(0x00ffcc);
 
-    return i.reply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
+  const msg = await i.channel.send({ embeds: [embed] });
 
-    const embed = new EmbedBuilder()
-  .setTitle(`🏆 CUP LIVE STARTED`)
-  .setDescription("Leaderboard initializing...")
-  .setColor(0x00ffcc);
+  cup.leaderboardMessageId = msg.id;
+  cup.leaderboardChannelId = i.channel.id;
 
-const msg = await i.channel.send({ embeds: [embed] });
+  await sync();
 
-cup.leaderboardMessageId = msg.id;
-cup.leaderboardChannelId = i.channel.id;
-  }
-
+  return i.reply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
+}
   // 📊 SCORE
 
 if (i.commandName === "score") {
@@ -201,35 +204,68 @@ if (i.commandName === "score") {
 }
 
   // ⚔️ 1v1 MATCH
-  if (i.commandName === "match") {
-    const winner = i.options.getUser("winner");
-    const loser = i.options.getUser("loser");
+if (i.commandName === "match") {
+  if (!isRef(i.member))
+    return i.reply({ content: "Ref only", ephemeral: true });
 
-    initGame(cup.currentGame);
+  const winner = i.options.getUser("winner");
+  const loser = i.options.getUser("loser");
 
-    const game = cup.games[cup.currentGame];
-
-    const matchId = `${winner.id}_vs_${loser.id}`;
-
-    if (game.matches[matchId]) {
-      return i.reply("Match already recorded");
-    }
-
-    game.matches[matchId] = {
-      winner: winner.username,
-      loser: loser.username
-    };
-
-    initPlayer(game.leaderboard, winner.id, winner.username);
-    initPlayer(cup.overall, winner.id, winner.username);
-
-    game.leaderboard[winner.id].points += 1;
-    cup.overall[winner.id].points += 1;
-
-    await sync();
-
-    return i.reply(`🏁 ${winner.username} wins 1v1`);
+  if (!cup.currentGame || !cup.games[cup.currentGame]) {
+    return i.reply("⚠️ No active game. Use /start first.");
   }
+
+  const game = cup.games[cup.currentGame];
+
+  const matchId = `${winner.id}_vs_${loser.id}`;
+
+  if (game.matches[matchId]) {
+    return i.reply("Match already recorded");
+  }
+
+  // 🧠 store match result
+  game.matches[matchId] = {
+    winner: winner.username,
+    loser: loser.username
+  };
+
+  // 🧠 ensure leaderboard exists
+  if (!game.leaderboard[winner.id]) {
+    game.leaderboard[winner.id] = { name: winner.username, points: 0 };
+  }
+
+  if (!game.leaderboard[loser.id]) {
+    game.leaderboard[loser.id] = { name: loser.username, points: 0 };
+  }
+
+  if (!cup.overall[winner.id]) {
+    cup.overall[winner.id] = { name: winner.username, points: 0 };
+  }
+
+  if (!cup.overall[loser.id]) {
+    cup.overall[loser.id] = { name: loser.username, points: 0 };
+  }
+
+  // 🏆 GIVE POINTS (THIS IS THE IMPORTANT PART YOU ASKED FOR)
+  // adjustable scoring system
+const winPoints = 1;
+  game.leaderboard[winner.id].points += winPoints;
+  cup.overall[winner.id].points += winPoints;
+  
+  cup.overall[winner.id].points += 1;
+
+  // optional: loser tracking (no points, but keeps consistency)
+  game.leaderboard[loser.id].points += 0;
+
+  // 📡 update live overlay
+  await sync();
+
+  // 📊 update Discord leaderboard message (if you use it)
+  const channel = await i.channel;
+  updateLeaderboard(channel).catch(() => {});
+
+  return i.reply(`🏁 ${winner.username} wins +1 point`);
+}
 
   // 🏁 END
   if (i.commandName === "end") {
@@ -264,12 +300,6 @@ if (i.commandName === "score") {
 
 client.once("ready", () => {
   console.log(`🏆 CUP LIVE BOT ONLINE: ${client.user.tag}`);
-});
-
- client.on("interactionCreate", async (i) => {
-  console.log("🔥 INTERACTION RECEIVED:", i.commandName);
-
-  if (!i.isChatInputCommand()) return;
 });
 
 client.login(TOKEN);

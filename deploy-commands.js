@@ -54,19 +54,19 @@ const commands = [
 
 new SlashCommandBuilder()
   .setName('match')
-  .setDescription('Go against a Player (1v1)')
+  .setDescription('Record a 1v1 match result')
 
   .addUserOption(option =>
-    option.setName('player1')
-      .setDescription('Player 1')
+    option.setName('winner')
+      .setDescription('Winner of the match')
       .setRequired(true)
   )
 
   .addUserOption(option =>
-    option.setName('player2')
-      .setDescription('Player 2')
+    option.setName('loser')
+      .setDescription('Loser of the match')
       .setRequired(true)
-  ),
+  )
 
 ].map(cmd => cmd.toJSON());
 
