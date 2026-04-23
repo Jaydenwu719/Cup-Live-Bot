@@ -181,44 +181,6 @@ if (i.commandName === "score") {
   return i.reply(`📊 ${user.username} +${pts} pts`);
 }
 
-  // 🚨 SAFETY CHECK
-  if (!cup.currentGame || !cup.games[cup.currentGame]) {
-    return i.reply("⚠️ No active game. Use /start first.");
-  }
-
-  const game = cup.games[cup.currentGame];
-
-  // 🧠 SAFE PLAYER INIT
-  if (!game.leaderboard[user.id]) {
-    game.leaderboard[user.id] = {
-      name: user.username,
-      points: 0
-    };
-  }
-
-  if (!cup.overall[user.id]) {
-    cup.overall[user.id] = {
-      name: user.username,
-      points: 0
-    };
-  }
-
-  game.leaderboard[user.id].points += pts;
-  cup.overall[user.id].points += pts;
-
-await sync();
-
-// 🔥 LIVE LEADERBOARD UPDATE (THIS WAS MISSING)
-const channel = await i.client.channels.fetch(cup.leaderboardChannelId);
-updateLeaderboard(channel).catch(() => {});
-
-if (!i.replied && !i.deferred) {
-  return i.reply(`📊 ${user.username} +${pts} pts`);
-} else {
-  return i.followUp(`📊 ${user.username} +${pts} pts`);
-}
-
-
   // ⚔️ 1v1 MATCH
 if (i.commandName === "match") {
   if (!isRef(i.member))
