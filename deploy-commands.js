@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const { REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { REST, Routes, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const TOKEN = process.env.TOKEN;
 
