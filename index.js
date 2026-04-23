@@ -117,16 +117,18 @@ client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
   // 🏆 START
-  if (i.commandName === "start") {
+if (i.commandName === "start") {
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
+
+  // 🔥 reply FIRST (prevents 40060 error)
+  await i.reply(`🏆 Starting CUP LIVE...`);
 
   cup.game = i.options.getString("game");
   cup.currentGame = cup.game;
 
   initGame(cup.game);
-
-  cup.previousRankings = {}; // 🔥 reset ranking memory
+  cup.previousRankings = {};
 
   const embed = new EmbedBuilder()
     .setTitle(`🏆 CUP LIVE STARTED`)
@@ -135,13 +137,13 @@ client.on("interactionCreate", async (i) => {
 
   const msg = await i.channel.send({ embeds: [embed] });
 
-  // 🔥 STORE BOTH (THIS IS THE FIX)
   cup.leaderboardMessageId = msg.id;
   cup.leaderboardChannelId = i.channel.id;
 
   await sync();
 
-  return i.reply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
+  // 🔥 edit instead of replying again
+  return i.editReply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
 }
   // 📊 SCORE
 
@@ -183,7 +185,11 @@ await sync();
 const channel = await i.client.channels.fetch(cup.leaderboardChannelId);
 updateLeaderboard(channel).catch(() => {});
 
-return i.reply(`📊 ${user.username} +${pts} pts`);
+if (!i.replied && !i.deferred) {
+  return i.reply(`📊 ${user.username} +${pts} pts`);
+} else {
+  return i.followUp(`📊 ${user.username} +${pts} pts`);
+}
 }
 
   // ⚔️ 1v1 MATCH
@@ -232,10 +238,9 @@ if (i.commandName === "match") {
   // 🏆 GIVE POINTS (THIS IS THE IMPORTANT PART YOU ASKED FOR)
   // adjustable scoring system
 const winPoints = 1;
-  game.leaderboard[winner.id].points += winPoints;
-  cup.overall[winner.id].points += winPoints;
 
-  cup.overall[winner.id].points += 1;
+game.leaderboard[winner.id].points += winPoints;
+cup.overall[winner.id].points += winPoints;
 
   // optional: loser tracking (no points, but keeps consistency)
   game.leaderboard[loser.id].points += 0;
@@ -244,7 +249,7 @@ const winPoints = 1;
   await sync();
 
   // 📊 update Discord leaderboard message (if you use it)
-  const channel = await i.channel;
+  const channel = await i.client.channels.fetch(cup.leaderboardChannelId);
   updateLeaderboard(channel).catch(() => {});
 
   return i.reply(`🏁 ${winner.username} wins +1 point`);
@@ -281,7 +286,7 @@ const winPoints = 1;
 
 });
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`🏆 CUP LIVE BOT ONLINE: ${client.user.tag}`);
 });
 
