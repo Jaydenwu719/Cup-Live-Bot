@@ -9,7 +9,6 @@ const CLIENT_ID = "1495186140435710032";
 
 const commands = [
 
-  // 🎮 START COMMAND
   new SlashCommandBuilder()
     .setName('start')
     .setDescription('Start CUP LIVE game')
@@ -24,12 +23,9 @@ const commands = [
         .setRequired(false)
     ),
 
-  // 🏆 SCORE COMMAND (FIXED ORDER RULE)
   new SlashCommandBuilder()
     .setName('score')
     .setDescription('Add score or run bracket match')
-
-    // ✅ REQUIRED OPTIONS FIRST
     .addUserOption(option =>
       option.setName('user')
         .setDescription('Player')
@@ -40,18 +36,19 @@ const commands = [
         .setDescription('Points to add')
         .setRequired(true)
     )
-
-    // ❌ OPTIONAL OPTIONS LAST
     .addUserOption(option =>
       option.setName('against')
         .setDescription('Opponent (for bracket mode)')
         .setRequired(false)
     ),
 
-  // 🏁 END COMMAND
   new SlashCommandBuilder()
     .setName('end')
-    .setDescription('End current round')
+    .setDescription('End current round'),
+
+  new SlashCommandBuilder()
+    .setName('end-cup')
+    .setDescription('End full cup and show results')
 
 ].map(cmd => cmd.toJSON());
 

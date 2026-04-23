@@ -38,11 +38,12 @@ const API = "https://cup-live.onrender.com";
 let cup = {
   game: "none",
   round: 1,
+  scores: {},
   currentGame: "",
-  bracketMode: false,
 
-  games: {},      // per game leaderboard
-  overall: {}     // global leaderboard
+  leaderboardMessageId: null,
+  leaderboardChannelId: null,
+  previousRankings: {}
 };
 
 // ================= HELPERS =================
@@ -67,12 +68,59 @@ function initPlayer(obj, id, name) {
   }
 }
 
+function buildLeaderboard(page = 0) {
+  const sorted = Object.entries(cup.scores)
+    .sort((a, b) => b[1] - a[1]);
+
+  const perPage = 6;
+  const start = page * perPage;
+  const slice = sorted.slice(start, start + perPage);
+
+  let desc = "";
+
+  slice.forEach(([id, pts], index) => {
+    const rank = start + index + 1;
+
+    const prevRank = cup.previousRankings[id];
+
+    let arrow = "";
+
+    if (prevRank !== undefined) {
+      if (prevRank > rank) arrow = "⬆️";
+      else if (prevRank < rank) arrow = "⬇️";
+      else arrow = "➡️";
+    }
+
+    cup.previousRankings[id] = rank;
+
+    desc += `${rank}. <@${id}> — **${pts} pts** ${arrow}\n`;
+  });
+
+  return desc || "No players yet";
+}
+
 async function sync() {
   try {
     await axios.post(`${API}/update`, cup);
   } catch (err) {
     console.log("SYNC ERROR:", err.message);
   }
+}
+
+const { EmbedBuilder } = require("discord.js");
+
+async function updateLeaderboard(channel) {
+  if (!cup.leaderboardMessageId) return;
+
+  const msg = await channel.messages.fetch(cup.leaderboardMessageId);
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🏆 CUP LIVE — ${cup.game}`)
+    .setDescription(buildLeaderboard(0))
+    .setColor(0x00ffcc)
+    .setFooter({ text: "Live Leaderboard Updates" });
+
+  await msg.edit({ embeds: [embed] });
 }
 
 // ================= COMMANDS =================
@@ -93,6 +141,16 @@ client.on("interactionCreate", async (i) => {
     await sync();
 
     return i.reply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
+
+    const embed = new EmbedBuilder()
+  .setTitle(`🏆 CUP LIVE STARTED`)
+  .setDescription("Leaderboard initializing...")
+  .setColor(0x00ffcc);
+
+const msg = await i.channel.send({ embeds: [embed] });
+
+cup.leaderboardMessageId = msg.id;
+cup.leaderboardChannelId = i.channel.id;
   }
 
   // 📊 SCORE
@@ -166,6 +224,18 @@ client.on("interactionCreate", async (i) => {
 
     return i.reply(`🏆 GLOBAL LEADERBOARD\n\n${sorted}`);
   }
+
+  if (i.commandName === "end-cup") {
+  const sorted = Object.entries(cup.overall)
+    .sort((a, b) => b[1].points - a[1].points)
+    .map(([id, data], i) => `${i + 1}. ${data.name} - ${data.points} pts`)
+    .join("\n");
+
+  await sync();
+
+  return i.reply(`🏆 FINAL CUP RESULTS\n\n${sorted}`);
+}
+
 });
 
 client.once("ready", () => {
