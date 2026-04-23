@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
 
@@ -6,14 +5,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-
-// ================= LIVE STATE =================
-
-let cup = {
-  games: {},
-  overall: {},
-  currentGame: ""
-};
 
 // ================= WEBSITE API =================
 
@@ -32,206 +23,153 @@ app.listen(PORT, () => {
 });
 
 // ================= DISCORD BOT =================
-=======
-const { Client, GatewayIntentBits } = require('discord.js');
-const axios = require('axios');
 
-// 🌍 YOUR HOSTED SERVER (Render)
-const API = "https://cup-live.onrender.com";
-
-// 🔐 TOKEN COMES FROM ENV (NOT CODE)
+const axios = require("axios");
 const TOKEN = process.env.TOKEN;
->>>>>>> 7980d7a (clean CUP LIVE initial upload (no secrets))
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-<<<<<<< HEAD
-const TOKEN = process.env.TOKEN;
+const API = "https://cup-live.onrender.com";
 
-// ensure game exists
-function initGame(game) {
-  if (!cup.games[game]) {
-    cup.games[game] = {
-      leaderboard: {},
-      bracket: {},
-      matches: {}
-    };
-  }
-}
+// ================= STATE =================
 
-// ================= INTERACTIONS =================
-
-client.on("interactionCreate", async (i) => {
-  if (!i.isChatInputCommand()) return;
-
-  // 🏆 START GAME
-  if (i.commandName === "start") {
-    const game = i.options.getString("game");
-    const bracket = i.options.getBoolean("bracket") || false;
-
-    cup.currentGame = game;
-    cup.bracketMode = bracket;
-
-    initGame(game);
-
-    return i.reply(
-`🏆 CUP LIVE STARTED
-🎮 ${game}
-📊 https://cup-live.onrender.com/overlay.html`
-    );
-  }
-
-  // 📊 SCORE
-  if (i.commandName === "score") {
-    const user = i.options.getUser("user");
-    const points = i.options.getInteger("points");
-
-    if (!cup.currentGame) {
-      return i.reply("No game started");
-    }
-
-    initGame(cup.currentGame);
-
-    const game = cup.games[cup.currentGame];
-
-    // leaderboard
-    if (!game.leaderboard[user.id]) {
-      game.leaderboard[user.id] = {
-=======
-// 🏆 CUP STATE
 let cup = {
   game: "none",
   round: 1,
-  scores: {}
+  currentGame: "",
+  bracketMode: false,
+
+  games: {},      // per game leaderboard
+  overall: {}     // global leaderboard
 };
 
-// 🔐 Admin / Ref check
+// ================= HELPERS =================
+
 function isRef(member) {
   return member.permissions.has("Administrator") ||
          member.permissions.has("ManageGuild");
 }
 
-// 📡 Sync to Render server
+function initGame(game) {
+  if (!cup.games[game]) {
+    cup.games[game] = {
+      leaderboard: {},
+      matches: {}
+    };
+  }
+}
+
+function initPlayer(obj, id, name) {
+  if (!obj[id]) {
+    obj[id] = { name, points: 0 };
+  }
+}
+
 async function sync() {
   try {
     await axios.post(`${API}/update`, cup);
-    console.log("SYNC OK");
   } catch (err) {
     console.log("SYNC ERROR:", err.message);
   }
 }
 
 // ================= COMMANDS =================
-client.on('interactionCreate', async i => {
+
+client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
-  // 🎮 START GAME
-  if (i.commandName === 'start') {
-
+  // 🏆 START
+  if (i.commandName === "start") {
     if (!isRef(i.member))
       return i.reply({ content: "Ref only", ephemeral: true });
 
-    cup.game = i.options.getString('game');
+    cup.game = i.options.getString("game");
+    cup.currentGame = cup.game;
+
+    initGame(cup.game);
 
     await sync();
 
-    return i.reply(`🏆 CUP LIVE started: ${cup.game}`);
+    return i.reply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
   }
 
-  // 🏆 SCORE COMMAND
-  if (i.commandName === 'score') {
-
+  // 📊 SCORE
+  if (i.commandName === "score") {
     if (!isRef(i.member))
       return i.reply({ content: "Ref only", ephemeral: true });
 
-    const user = i.options.getUser('user');
-    const pts = i.options.getInteger('points');
-
-    if (!cup.scores[user.id]) {
-      cup.scores[user.id] = {
->>>>>>> 7980d7a (clean CUP LIVE initial upload (no secrets))
-        name: user.username,
-        points: 0
-      };
-    }
-
-<<<<<<< HEAD
-    // overall
-    if (!cup.overall[user.id]) {
-      cup.overall[user.id] = {
-        name: user.username,
-        points: 0
-      };
-    }
-
-    game.leaderboard[user.id].points += points;
-    cup.overall[user.id].points += points;
-
-    return i.reply(`📊 ${user.username} +${points} pts`);
-  }
-
-  // 🧩 BRACKET MATCH (1v1)
-  if (i.commandName === "score") {
     const user = i.options.getUser("user");
-    const against = i.options.getUser("against");
+    const pts = i.options.getInteger("points");
 
-    if (!against || !cup.currentGame) return;
+    initGame(cup.currentGame);
 
     const game = cup.games[cup.currentGame];
 
-    const matchId = `${user.id}_vs_${against.id}`;
+    initPlayer(game.leaderboard, user.id, user.username);
+    initPlayer(cup.overall, user.id, user.username);
 
-    if (game.matches[matchId]) {
-      return i.reply("Match already played");
-    }
-
-    game.matches[matchId] = {
-      winner: user.username,
-      loser: against.username
-    };
-
-    if (!game.leaderboard[user.id]) {
-      game.leaderboard[user.id] = { name: user.username, points: 0 };
-    }
-
-    if (!cup.overall[user.id]) {
-      cup.overall[user.id] = { name: user.username, points: 0 };
-    }
-
-    game.leaderboard[user.id].points += 1;
-    cup.overall[user.id].points += 1;
-
-    return i.reply(`🏁 ${user.username} wins 1v1 match`);
-  }
-});
-
-client.once("ready", () => {
-  console.log("BOT ONLINE");
-});
-
-=======
-    cup.scores[user.id].points += pts;
+    game.leaderboard[user.id].points += pts;
+    cup.overall[user.id].points += pts;
 
     await sync();
 
-    return i.reply(`+${pts} → ${user.username}`);
+    return i.reply(`📊 ${user.username} +${pts} pts`);
   }
 
-  // 🏁 END ROUND
-  if (i.commandName === 'end') {
+  // ⚔️ 1v1 MATCH
+  if (i.commandName === "match") {
+    const winner = i.options.getUser("winner");
+    const loser = i.options.getUser("loser");
+
+    initGame(cup.currentGame);
+
+    const game = cup.games[cup.currentGame];
+
+    const matchId = `${winner.id}_vs_${loser.id}`;
+
+    if (game.matches[matchId]) {
+      return i.reply("Match already recorded");
+    }
+
+    game.matches[matchId] = {
+      winner: winner.username,
+      loser: loser.username
+    };
+
+    initPlayer(game.leaderboard, winner.id, winner.username);
+    initPlayer(cup.overall, winner.id, winner.username);
+
+    game.leaderboard[winner.id].points += 1;
+    cup.overall[winner.id].points += 1;
+
+    await sync();
+
+    return i.reply(`🏁 ${winner.username} wins 1v1`);
+  }
+
+  // 🏁 END
+  if (i.commandName === "end") {
     cup.round++;
     await sync();
     return i.reply("🏁 Round ended");
   }
+
+  // 📊 LEADERBOARD
+  if (i.commandName === "leaderboard") {
+    const sorted = Object.entries(cup.overall)
+      .sort((a, b) => b[1].points - a[1].points)
+      .slice(0, 10)
+      .map(([id, data], i) => `${i + 1}. ${data.name} - ${data.points} pts`)
+      .join("\n");
+
+    return i.reply(`🏆 GLOBAL LEADERBOARD\n\n${sorted}`);
+  }
 });
 
-// 🤖 BOT READY
-client.once('ready', () => {
+client.once("ready", () => {
   console.log(`🏆 CUP LIVE BOT ONLINE: ${client.user.tag}`);
 });
 
-// 🔐 LOGIN
->>>>>>> 7980d7a (clean CUP LIVE initial upload (no secrets))
 client.login(TOKEN);
