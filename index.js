@@ -154,6 +154,33 @@ if (i.commandName === "score") {
   const user = i.options.getUser("user");
   const pts = i.options.getInteger("points");
 
+  if (!cup.currentGame || !cup.games[cup.currentGame]) {
+    return i.reply("⚠️ No active game. Use /start first.");
+  }
+
+  const game = cup.games[cup.currentGame];
+
+  // ✅ init player in BOTH places
+  initPlayer(game.leaderboard, user.id, user.username);
+  initPlayer(cup.overall, user.id, user.username);
+
+  // ✅ add points
+  game.leaderboard[user.id].points += pts;
+  cup.overall[user.id].points += pts;
+
+  await sync();
+
+  // ✅ UPDATE LIVE LEADERBOARD
+  try {
+    const channel = await client.channels.fetch(cup.leaderboardChannelId);
+    await updateLeaderboard(channel);
+  } catch (err) {
+    console.log("Leaderboard update failed:", err.message);
+  }
+
+  return i.reply(`📊 ${user.username} +${pts} pts`);
+}
+
   // 🚨 SAFETY CHECK
   if (!cup.currentGame || !cup.games[cup.currentGame]) {
     return i.reply("⚠️ No active game. Use /start first.");
@@ -190,7 +217,7 @@ if (!i.replied && !i.deferred) {
 } else {
   return i.followUp(`📊 ${user.username} +${pts} pts`);
 }
-}
+
 
   // ⚔️ 1v1 MATCH
 if (i.commandName === "match") {
