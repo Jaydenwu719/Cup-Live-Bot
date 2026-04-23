@@ -77,8 +77,8 @@ function initPlayer(obj, id, name) {
 }
 
 function buildLeaderboard(page = 0) {
-  const sorted = Object.entries(cup.scores)
-    .sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(cup.overall)
+    .sort((a, b) => b[1].points - a[1].points);
 
   const perPage = 6;
   const start = page * perPage;
@@ -86,7 +86,7 @@ function buildLeaderboard(page = 0) {
 
   let desc = "";
 
-  slice.forEach(([id, pts], index) => {
+  slice.forEach(([id, data], index) => {
     const rank = start + index + 1;
 
     const prevRank = cup.previousRankings[id];
@@ -101,34 +101,10 @@ function buildLeaderboard(page = 0) {
 
     cup.previousRankings[id] = rank;
 
-    desc += `${rank}. <@${id}> — **${pts} pts** ${arrow}\n`;
+    desc += `${rank}. <@${id}> — **${data.points} pts** ${arrow}\n`;
   });
 
   return desc || "No players yet";
-}
-
-async function sync() {
-  try {
-    await axios.post(`${API}/update`, cup);
-  } catch (err) {
-    console.log("SYNC ERROR:", err.message);
-  }
-}
-
-const { EmbedBuilder } = require("discord.js");
-
-async function updateLeaderboard(channel) {
-  if (!cup.leaderboardMessageId) return;
-
-  const msg = await channel.messages.fetch(cup.leaderboardMessageId);
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🏆 CUP LIVE — ${cup.game}`)
-    .setDescription(buildLeaderboard(0))
-    .setColor(0x00ffcc)
-    .setFooter({ text: "Live Leaderboard Updates" });
-
-  await msg.edit({ embeds: [embed] });
 }
 
 if (!cup.games) cup.games = {};
@@ -150,6 +126,8 @@ client.on("interactionCreate", async (i) => {
 
   initGame(cup.game);
 
+  cup.previousRankings = {}; // 🔥 reset ranking memory
+
   const embed = new EmbedBuilder()
     .setTitle(`🏆 CUP LIVE STARTED`)
     .setDescription(`Game: ${cup.game}`)
@@ -157,6 +135,7 @@ client.on("interactionCreate", async (i) => {
 
   const msg = await i.channel.send({ embeds: [embed] });
 
+  // 🔥 STORE BOTH (THIS IS THE FIX)
   cup.leaderboardMessageId = msg.id;
   cup.leaderboardChannelId = i.channel.id;
 
@@ -198,9 +177,13 @@ if (i.commandName === "score") {
   game.leaderboard[user.id].points += pts;
   cup.overall[user.id].points += pts;
 
-  await sync();
+await sync();
 
-  return i.reply(`📊 ${user.username} +${pts} pts`);
+// 🔥 LIVE LEADERBOARD UPDATE (THIS WAS MISSING)
+const channel = await i.client.channels.fetch(cup.leaderboardChannelId);
+updateLeaderboard(channel).catch(() => {});
+
+return i.reply(`📊 ${user.username} +${pts} pts`);
 }
 
   // ⚔️ 1v1 MATCH
@@ -251,7 +234,7 @@ if (i.commandName === "match") {
 const winPoints = 1;
   game.leaderboard[winner.id].points += winPoints;
   cup.overall[winner.id].points += winPoints;
-  
+
   cup.overall[winner.id].points += 1;
 
   // optional: loser tracking (no points, but keeps consistency)
