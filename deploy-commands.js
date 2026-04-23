@@ -7,6 +7,8 @@ const TOKEN = process.env.TOKEN;
 // 🔴 PUT YOUR REAL DISCORD APPLICATION ID HERE
 const CLIENT_ID = "1495186140435710032";
 
+const GUILD_ID = "1484659822786908192";
+
 const commands = [
 
   new SlashCommandBuilder()
@@ -77,7 +79,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
     console.log("🚀 Deploying slash commands...");
 
     await rest.put(
-      Routes.applicationCommands(CLIENT_ID),
+      Routes.applicationCommands(CLIENT_ID, GUILD_ID),
       { body: commands }
     );
 

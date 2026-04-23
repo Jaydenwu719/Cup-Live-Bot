@@ -31,6 +31,10 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
+client.on("interactionCreate", (i) => {
+  console.log("🔥 INTERACTION:", i.commandName);
+});
+
 const API = "https://cup-live.onrender.com";
 
 // ================= STATE =================
@@ -38,12 +42,13 @@ const API = "https://cup-live.onrender.com";
 let cup = {
   game: "none",
   round: 1,
-  scores: {},
+
+  scores: {},        // overall leaderboard (YOU ALREADY USE THIS)
   currentGame: "",
 
-  leaderboardMessageId: null,
-  leaderboardChannelId: null,
-  previousRankings: {}
+  games: {},         // 🔥 REQUIRED (fixes your crash)
+
+  updatedAt: Date.now()
 };
 
 // ================= HELPERS =================
@@ -54,9 +59,12 @@ function isRef(member) {
 }
 
 function initGame(game) {
+  if (!cup.games) cup.games = {};
+
   if (!cup.games[game]) {
     cup.games[game] = {
       leaderboard: {},
+      bracket: {},
       matches: {}
     };
   }
@@ -154,7 +162,7 @@ cup.leaderboardChannelId = i.channel.id;
   }
 
   // 📊 SCORE
-  
+
 if (i.commandName === "score") {
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
@@ -256,6 +264,12 @@ if (i.commandName === "score") {
 
 client.once("ready", () => {
   console.log(`🏆 CUP LIVE BOT ONLINE: ${client.user.tag}`);
+});
+
+ client.on("interactionCreate", async (i) => {
+  console.log("🔥 INTERACTION RECEIVED:", i.commandName);
+
+  if (!i.isChatInputCommand()) return;
 });
 
 client.login(TOKEN);
