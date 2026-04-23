@@ -48,7 +48,23 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('end-cup')
-    .setDescription('End full cup and show results')
+    .setDescription('End full cup and show results'),
+
+new SlashCommandBuilder()
+  .setName('match')
+  .setDescription('Go against a Player (1v1)')
+
+  .addUserOption(option =>
+    option.setName('player1')
+      .setDescription('Player 1')
+      .setRequired(true)
+  )
+
+  .addUserOption(option =>
+    option.setName('player2')
+      .setDescription('Player 2')
+      .setRequired(true)
+  ),
 
 ].map(cmd => cmd.toJSON());
 

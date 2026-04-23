@@ -154,27 +154,43 @@ cup.leaderboardChannelId = i.channel.id;
   }
 
   // 📊 SCORE
-  if (i.commandName === "score") {
-    if (!isRef(i.member))
-      return i.reply({ content: "Ref only", ephemeral: true });
+  
+if (i.commandName === "score") {
+  if (!isRef(i.member))
+    return i.reply({ content: "Ref only", ephemeral: true });
 
-    const user = i.options.getUser("user");
-    const pts = i.options.getInteger("points");
+  const user = i.options.getUser("user");
+  const pts = i.options.getInteger("points");
 
-    initGame(cup.currentGame);
-
-    const game = cup.games[cup.currentGame];
-
-    initPlayer(game.leaderboard, user.id, user.username);
-    initPlayer(cup.overall, user.id, user.username);
-
-    game.leaderboard[user.id].points += pts;
-    cup.overall[user.id].points += pts;
-
-    await sync();
-
-    return i.reply(`📊 ${user.username} +${pts} pts`);
+  // 🚨 SAFETY CHECK
+  if (!cup.currentGame || !cup.games[cup.currentGame]) {
+    return i.reply("⚠️ No active game. Use /start first.");
   }
+
+  const game = cup.games[cup.currentGame];
+
+  // 🧠 SAFE PLAYER INIT
+  if (!game.leaderboard[user.id]) {
+    game.leaderboard[user.id] = {
+      name: user.username,
+      points: 0
+    };
+  }
+
+  if (!cup.overall[user.id]) {
+    cup.overall[user.id] = {
+      name: user.username,
+      points: 0
+    };
+  }
+
+  game.leaderboard[user.id].points += pts;
+  cup.overall[user.id].points += pts;
+
+  await sync();
+
+  return i.reply(`📊 ${user.username} +${pts} pts`);
+}
 
   // ⚔️ 1v1 MATCH
   if (i.commandName === "match") {
