@@ -111,6 +111,25 @@ if (!cup.games) cup.games = {};
 if (!cup.overall) cup.overall = {};
 if (!cup.previousRankings) cup.previousRankings = {};
 
+async function updateLeaderboard(channel) {
+  if (!cup.leaderboardMessageId) return;
+
+  const msg = await channel.messages.fetch(cup.leaderboardMessageId);
+
+  const sorted = Object.entries(cup.overall)
+    .sort((a, b) => b[1].points - a[1].points)
+    .slice(0, 6)
+    .map(([id, data], i) => `${i + 1}. <@${id}> — ${data.points} pts`)
+    .join("\n");
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🏆 LIVE LEADERBOARD`)
+    .setDescription(sorted)
+    .setColor(0x00ffcc);
+
+  await msg.edit({ embeds: [embed] });
+}
+
 // ================= COMMANDS =================
 
 client.on("interactionCreate", async (i) => {
@@ -143,34 +162,9 @@ if (i.commandName === "start") {
 
   return i.editReply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
 }
-
-  // 🔥 reply FIRST (prevents 40060 error)
-  await i.reply(`🏆 Starting CUP LIVE...`);
-
-  cup.game = i.options.getString("game");
-  cup.currentGame = cup.game;
-
-  initGame(cup.game);
-  cup.previousRankings = {};
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🏆 CUP LIVE STARTED`)
-    .setDescription(`Game: ${cup.game}`)
-    .setColor(0x00ffcc);
-
-  const msg = await i.channel.send({ embeds: [embed] });
-
-  cup.leaderboardMessageId = msg.id;
-  cup.leaderboardChannelId = i.channel.id;
-
-  await sync();
-
-  // 🔥 edit instead of replying again
-  return i.editReply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
-
   // 📊 SCORE
 
-  if (i.commandName === "score") {
+if (i.commandName === "score") {
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
 
@@ -183,23 +177,16 @@ if (i.commandName === "start") {
 
   const game = cup.games[cup.currentGame];
 
-  // ✅ init player in BOTH places
   initPlayer(game.leaderboard, user.id, user.username);
   initPlayer(cup.overall, user.id, user.username);
 
-  // ✅ add points
   game.leaderboard[user.id].points += pts;
   cup.overall[user.id].points += pts;
 
   await sync();
 
-  // ✅ UPDATE LIVE LEADERBOARD
-  try {
-    const channel = await client.channels.fetch(cup.leaderboardChannelId);
-    await updateLeaderboard(channel);
-  } catch (err) {
-    console.log("Leaderboard update failed:", err.message);
-  }
+  const channel = await client.channels.fetch(cup.leaderboardChannelId);
+  updateLeaderboard(channel).catch(() => {});
 
   return i.reply(`📊 ${user.username} +${pts} pts`);
 }
