@@ -23,15 +23,11 @@ app.listen(PORT, () => {
 });
 
 // ================= DISCORD BOT =================
-
-const axios = require("axios");
 const TOKEN = process.env.TOKEN;
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
-
-const API = "https://cup-live.onrender.com";
 
 // ================= STATE =================
 
@@ -111,25 +107,6 @@ if (!cup.games) cup.games = {};
 if (!cup.overall) cup.overall = {};
 if (!cup.previousRankings) cup.previousRankings = {};
 
-async function updateLeaderboard(channel) {
-  if (!cup.leaderboardMessageId) return;
-
-  const msg = await channel.messages.fetch(cup.leaderboardMessageId);
-
-  const sorted = Object.entries(cup.overall)
-    .sort((a, b) => b[1].points - a[1].points)
-    .slice(0, 6)
-    .map(([id, data], i) => `${i + 1}. <@${id}> — ${data.points} pts`)
-    .join("\n");
-
-  const embed = new EmbedBuilder()
-    .setTitle(`🏆 LIVE LEADERBOARD`)
-    .setDescription(sorted)
-    .setColor(0x00ffcc);
-
-  await msg.edit({ embeds: [embed] });
-}
-
 // ================= COMMANDS =================
 
 client.on("interactionCreate", async (i) => {
@@ -139,8 +116,6 @@ client.on("interactionCreate", async (i) => {
 if (i.commandName === "start") {
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
-
-  await i.deferReply();
 
   cup.game = i.options.getString("game");
   cup.currentGame = cup.game;
@@ -158,9 +133,10 @@ if (i.commandName === "start") {
   cup.leaderboardMessageId = msg.id;
   cup.leaderboardChannelId = i.channel.id;
 
-  await sync();
-
-  return i.editReply(`🏆 CUP LIVE STARTED\n🎮 ${cup.game}`);
+  return i.reply({
+    content: `🏆 CUP LIVE STARTED\n🎮 ${cup.game}`,
+    ephemeral: false
+  });
 }
   // 📊 SCORE
 
@@ -183,10 +159,12 @@ if (i.commandName === "score") {
   game.leaderboard[user.id].points += pts;
   cup.overall[user.id].points += pts;
 
-  await sync();
-
+try {
   const channel = await client.channels.fetch(cup.leaderboardChannelId);
-  updateLeaderboard(channel).catch(() => {});
+  await updateLeaderboard(channel);
+} catch (err) {
+  console.log("Leaderboard safe fail:", err.message);
+}
 
   return i.reply(`📊 ${user.username} +${pts} pts`);
 }
@@ -245,7 +223,6 @@ cup.overall[winner.id].points += winPoints;
   game.leaderboard[loser.id].points += 0;
 
   // 📡 update live overlay
-  await sync();
 
   // 📊 update Discord leaderboard message (if you use it)
   const channel = await i.client.channels.fetch(cup.leaderboardChannelId);
@@ -257,7 +234,6 @@ cup.overall[winner.id].points += winPoints;
   // 🏁 END
   if (i.commandName === "end") {
     cup.round++;
-    await sync();
     return i.reply("🏁 Round ended");
   }
 
@@ -277,8 +253,6 @@ cup.overall[winner.id].points += winPoints;
     .sort((a, b) => b[1].points - a[1].points)
     .map(([id, data], i) => `${i + 1}. ${data.name} - ${data.points} pts`)
     .join("\n");
-
-  await sync();
 
   return i.reply(`🏆 FINAL CUP RESULTS\n\n${sorted}`);
 }
