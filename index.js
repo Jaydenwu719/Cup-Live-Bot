@@ -92,8 +92,6 @@ function buildLeaderboard(page = 0) {
   slice.forEach(([id, data], index) => {
     const rank = start + index + 1;
 
-    const prevRank = cup.previousRankings[id];
-
     let arrow = "";
 
     if (prevRank !== undefined) {
@@ -102,7 +100,7 @@ function buildLeaderboard(page = 0) {
       else arrow = "➡️";
     }
 
-    cup.previousRankings[id] = rank;
+    cup.games[currentGame].previousRankings
 
     desc += `${rank}. <@${id}> — **${data.points} pts** ${arrow}\n`;
   });
@@ -118,12 +116,13 @@ async function updateLeaderboard() {
     const channel = await client.channels.fetch(cup.leaderboardChannelId);
     const msg = await channel.messages.fetch(cup.leaderboardMessageId);
 
-    const sorted = Object.entries(dataSource)
     const dataSource =
   cup.currentGame === "overall"
     ? cup.overall
     : cup.games[cup.currentGame]?.leaderboard || {};
-      sort((a, b) => b[1].points - a[1].points);
+
+const sorted = Object.entries(dataSource)
+  .sort((a, b) => b[1].points - a[1].points);
 
     const perPage = 6;
     if (!cup.page) cup.page = 0;
@@ -139,9 +138,11 @@ async function updateLeaderboard() {
     slice.forEach(([id, data], i) => {
 
       // 🧠 SAME POINTS = SAME RANK
-      if (lastPoints !== null && data.points < lastPoints) {
-        rank = start + i + 1;
-      }
+      if (lastPoints === null) {
+    rank = start + 1;
+    } else if (data.points < lastPoints) {
+    rank = rank + 1;
+    }
 
       lastPoints = data.points;
 
@@ -237,7 +238,7 @@ const row = new ActionRowBuilder().addComponents(
 
 client.on("interactionCreate", async (i) => {
 
-  // dropdown
+  // ================= DROPDOWN =================
   if (i.isStringSelectMenu()) {
     if (i.customId === "leaderboard_select") {
       cup.currentGame = i.values[0];
@@ -247,11 +248,21 @@ client.on("interactionCreate", async (i) => {
     }
   }
 
-  // buttons
-  if (!i.isButton()) return;
+  // ================= BUTTONS =================
+  if (i.isButton()) {
+    if (i.customId === "next") cup.page++;
+    if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
+
+    await updateLeaderboard();
+    return i.deferUpdate();
+  }
+
+  // ================= SLASH COMMANDS =================
+  if (!i.isChatInputCommand()) return;
 
   // 🏆 START
 if (i.commandName === "start") {
+  await updateLeaderboard();
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
 
@@ -288,6 +299,7 @@ if (!cup.games[gameName]) {
   // 📊 SCORE
 
 if (i.commandName === "score") {
+  await i.deferReply();
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
 
@@ -314,11 +326,12 @@ try {
   console.log("Leaderboard safe fail:", err.message);
 }
 
-  return i.reply(`📊 ${user.username} +${pts} pts`);
+  return i.editReply(`📊 ${user.username} +${pts} pts`);
 }
 
   // ⚔️ 1v1 MATCH
 if (i.commandName === "match") {
+  await i.deferReply();
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
 
@@ -373,7 +386,7 @@ cup.overall[winner.id].points += winPoints;
   // 📊 update Discord leaderboard message (if you use it)
   updateLeaderboard();
 
-  return i.reply(`🏁 ${winner.username} wins +1 point`);
+  return i.editReply(`📊 ${user.username} +${pts} pts`);
 }
 
   // 🏁 END
