@@ -110,6 +110,18 @@ function buildLeaderboard(page = 0) {
 
 // ================= LIVE LEADERBOARD (PRO VERSION) =================
 async function updateLeaderboard() {
+  const gameKey = cup.currentGame;
+
+if (!cup.games[gameKey]) {
+  cup.games[gameKey] = {
+    leaderboard: {},
+    previousRankings: {}
+  };
+}
+
+if (!cup.games[gameKey].previousRankings) {
+  cup.games[gameKey].previousRankings = {};
+}
   try {
     if (!cup.leaderboardMessageId || !cup.leaderboardChannelId) return;
 
@@ -136,46 +148,13 @@ const sorted = Object.entries(dataSource)
     let rank = start + 1;
 
     slice.forEach(([id, data], i) => {
+  if (i > 0 && data.points < slice[i - 1][1].points) {
+    rank = start + i + 1;
+  }
 
-      // 🧠 SAME POINTS = SAME RANK
-      if (lastPoints === null) {
-    rank = start + 1;
-    } else if (data.points < lastPoints) {
-    rank = rank + 1;
-    }
-
-      lastPoints = data.points;
-
-      // 🏅 rank styling
-      let rankDisplay;
-      if (rank === 1) rankDisplay = "🥇";
-      else if (rank === 2) rankDisplay = "🥈";
-      else if (rank === 3) rankDisplay = "🥉";
-      else rankDisplay = `✨ ${rank}.`;
-
-      // 📊 movement arrows
-      const prev =
-  cup.games[cup.currentGame]?.previousRankings?.[id];
-      let arrow = "";
-
-      if (prev !== undefined) {
-        if (prev > rank) arrow = "⬆️";
-        else if (prev < rank) arrow = "⬇️";
-        else arrow = "➡️";
-      }
-
-      if (!cup.games[cup.currentGame].previousRankings) {
-  cup.games[cup.currentGame].previousRankings = {};
-}
-
-cup.games[cup.currentGame].previousRankings[id] = rank;
-
-      // ✨ clean output
-      desc += `${rankDisplay} ${arrow} <@${id}> • **${data.points} pts**\n`;
-    });
 
     if (!desc) {
-  desc = "```diff\n- 🌌 No competitors yet...\n```";
+  desc = "🌌 No competitors yet...";
 }
     const embed = new EmbedBuilder()
       .setTitle("✨ COSMIC CUP — LIVE ✨")
@@ -237,237 +216,112 @@ const buttonRow = new ActionRowBuilder().addComponents(
   }
 }
 
-// ================= COMMANDS =================
+// ================= InteractionCreate =================
 
 client.on("interactionCreate", async (i) => {
+  try {
 
-  // ================= DROPDOWN =================
-  if (i.isStringSelectMenu()) {
-    if (i.customId === "leaderboard_select") {
-      cup.currentGame = i.values[0];
-      cup.page = 0;
-      try {
+    // ================= DROPDOWN =================
+    if (i.isStringSelectMenu()) {
+      if (i.isButton()) {
+  const dataSource =
+    cup.currentGame === "overall"
+      ? cup.overall
+      : cup.games[cup.currentGame]?.leaderboard || {};
+
+  const maxPage = Math.max(
+    0,
+    Math.ceil(Object.keys(dataSource).length / 6) - 1
+  );
+
+  if (i.customId === "next") {
+    if (cup.page < maxPage) cup.page++;
+  }
+
+  if (i.customId === "prev") {
+    cup.page = Math.max(0, cup.page - 1);
+  }
+
+  await i.deferUpdate();
   await updateLeaderboard();
-} catch (err) {
-  console.log("Leaderboard update error:", err.message);
+  return;
 }
-      return i.deferUpdate();
     }
+
+    // ================= BUTTONS =================
+    if (i.isButton()) {
+      if (i.customId === "next") cup.page++;
+      if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
+
+      await i.deferUpdate();
+      await updateLeaderboard();
+      return;
+    }
+
+    // ================= SLASH COMMANDS =================
+    if (!i.isChatInputCommand()) return;
+
+    // ---------------- START ----------------
+    if (i.commandName === "start") {
+      if (!isRef(i.member))
+        return i.reply({ content: "Ref only", ephemeral: true });
+
+      const gameName = i.options.getString("game");
+
+      cup.game = gameName;
+      cup.currentGame = gameName;
+      cup.page = 0;
+
+      if (!cup.games[gameName]) {
+        cup.games[gameName] = {
+          leaderboard: {},
+          previousRankings: {}
+        };
+      }
+
+      const msg = await i.channel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🏆 LIVE LEADERBOARD")
+            .setDescription("🌌 No players yet...")
+            .setColor(0x00ffcc)
+        ]
+      });
+
+      cup.leaderboardMessageId = msg.id;
+      cup.leaderboardChannelId = i.channel.id;
+
+      await i.reply(`🏆 CUP LIVE STARTED\n🎮 ${gameName}`);
+      await updateLeaderboard();
+    }
+
+    // ---------------- SCORE ----------------
+    if (i.commandName === "score") {
+      if (!isRef(i.member))
+        return i.reply({ content: "Ref only", ephemeral: true });
+
+      const user = i.options.getUser("user");
+      const pts = i.options.getInteger("points");
+
+      const game = cup.games[cup.currentGame];
+      if (!game) return i.reply("⚠️ No active game");
+
+      initPlayer(game.leaderboard, user.id, user.username);
+      initPlayer(cup.overall, user.id, user.username);
+
+      game.leaderboard[user.id].points += pts;
+      cup.overall[user.id].points += pts;
+
+      await i.reply(`📊 ${user.username} +${pts} pts`);
+      await updateLeaderboard();
+    }
+
+  } catch (err) {
+    console.log("Interaction error:", err);
   }
-
-  // ================= BUTTONS =================
-  if (i.isButton()) {
-    if (i.customId === "next") cup.page++;
-    if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
-
-    try {
-  await updateLeaderboard();
-} catch (err) {
-  console.log("Leaderboard update error:", err.message);
-}
-    return i.deferUpdate();
-  }
-
-  // ================= SLASH COMMANDS =================
-  if (!i.isChatInputCommand()) return;
-
-  // 🏆 START
-if (i.commandName === "start") {
-  try {
-  await updateLeaderboard();
-} catch (err) {
-  console.log("Leaderboard update error:", err.message);
-}
-  if (!isRef(i.member))
-    return i.reply({ content: "Ref only", ephemeral: true });
-
-const gameName = i.options.getString("game");
-
-cup.game = gameName;
-cup.currentGame = gameName;
-cup.page = 0;
-
-if (!cup.games[gameName]) {
-  cup.games[gameName] = {
-    leaderboard: {},
-    previousRankings: {}
-  };
-}
-
-  const msg = await i.channel.send({
-  embeds: [
-    new EmbedBuilder()
-      .setTitle("🏆 LIVE LEADERBOARD")
-      .setDescription("🌌 No players yet...")
-      .setColor(0x00ffcc)
-  ]
-});
-
-  cup.leaderboardMessageId = msg.id;
-  cup.leaderboardChannelId = i.channel.id;
-
-  return i.reply({
-    content: `🏆 CUP LIVE STARTED\n🎮 ${cup.game}`,
-    ephemeral: false
-  });
-}
-  // 📊 SCORE
-
-if (i.commandName === "score") {
-  await i.deferReply();
-  if (!isRef(i.member))
-    return i.reply({ content: "Ref only", ephemeral: true });
-
-  const user = i.options.getUser("user");
-  const pts = i.options.getInteger("points");
-
-  if (!cup.currentGame || !cup.games[cup.currentGame]) {
-    return i.reply("⚠️ No active game. Use /start first.");
-  }
-
-  const game = cup.games[cup.currentGame];
-
-if (!game) return i.reply("⚠️ Game not found");
-
-initPlayer(game.leaderboard, user.id, user.username);
-initPlayer(cup.overall, user.id, user.username);
-
-game.leaderboard[user.id].points += pts;
-cup.overall[user.id].points += pts;
-
-try {
-  try {
-  await updateLeaderboard();
-} catch (err) {
-  console.log("Leaderboard update error:", err.message);
-}
-} catch (err) {
-  console.log("Leaderboard safe fail:", err.message);
-}
-
-  return i.editReply(`📊 ${user.username} +${pts} pts`);
-}
-
-  // ⚔️ 1v1 MATCH
-if (i.commandName === "match") {
-  await i.deferReply();
-  if (!isRef(i.member))
-    return i.reply({ content: "Ref only", ephemeral: true });
-
-  const winner = i.options.getUser("winner");
-  const loser = i.options.getUser("loser");
-
-  if (!cup.currentGame || !cup.games[cup.currentGame]) {
-    return i.reply("⚠️ No active game. Use /start first.");
-  }
-
-  const matchId = `${winner.id}_vs_${loser.id}`;
-
-  if (game.matches[matchId]) {
-    return i.reply("Match already recorded");
-  }
-
-  // 🧠 store match result
-  game.matches[matchId] = {
-    winner: winner.username,
-    loser: loser.username
-  };
-
-  // 🧠 ensure leaderboard exists
-  if (!game.leaderboard[winner.id]) {
-    game.leaderboard[winner.id] = { name: winner.username, points: 0 };
-  }
-
-  if (!game.leaderboard[loser.id]) {
-    game.leaderboard[loser.id] = { name: loser.username, points: 0 };
-  }
-
-  if (!cup.overall[winner.id]) {
-    cup.overall[winner.id] = { name: winner.username, points: 0 };
-  }
-
-  if (!cup.overall[loser.id]) {
-    cup.overall[loser.id] = { name: loser.username, points: 0 };
-  }
-
-  // 🏆 GIVE POINTS (THIS IS THE IMPORTANT PART YOU ASKED FOR)
-  // adjustable scoring system
-const winPoints = 1;
-
-game.leaderboard[winner.id].points += winPoints;
-cup.overall[winner.id].points += winPoints;
-
-  // optional: loser tracking (no points, but keeps consistency)
-  game.leaderboard[loser.id].points += 0;
-
-  // 📡 update live overlay
-
-  // 📊 update Discord leaderboard message (if you use it)
-  updateLeaderboard();
-
-  return i.editReply(`📊 ${user.username} +${pts} pts`);
-}
-
-  // 🏁 END
-  if (i.commandName === "end") {
-    cup.round++;
-    return i.reply("🏁 Round ended");
-  }
-
-  // 📊 LEADERBOARD
-  if (i.commandName === "leaderboard") {
-    const sorted = Object.entries(cup.overall)
-      .sort((a, b) => b[1].points - a[1].points)
-      .slice(0, 10)
-      .map(([id, data], i) => `${i + 1}. ${data.name} - ${data.points} pts`)
-      .join("\n");
-
-    return i.reply(`🏆 GLOBAL LEADERBOARD\n\n${sorted}`);
-  }
-
-  if (i.commandName === "end-cup") {
-  const sorted = Object.entries(cup.overall)
-    .sort((a, b) => b[1].points - a[1].points)
-    .map(([id, data], i) => `${i + 1}. ${data.name} - ${data.points} pts`)
-    .join("\n");
-
-  return i.reply(`🏆 FINAL CUP RESULTS\n\n${sorted}`);
-}
 });
 
 // ================= PAGINATION =================
-client.on("interactionCreate", async (i) => {
-  if (!i.isButton()) return;
-
-  try {
-    // ⬅️ PAGE LOGIC FIRST
-    if (i.customId === "next") {
-      const maxPage = Math.max(
-        0,
-        Math.ceil(
-          Object.keys(
-            cup.games[cup.currentGame]?.leaderboard || cup.overall
-          ).length / 6
-        ) - 1
-      );
-
-      if (cup.page < maxPage) cup.page++;
-    }
-
-    if (i.customId === "prev") {
-      cup.page = Math.max(0, cup.page - 1);
-    }
-
-    // ⬅️ MUST ACKNOWLEDGE FIRST
-    await i.deferUpdate();
-
-    // ⬅️ THEN UPDATE
-    await updateLeaderboard();
-
-  } catch (err) {
-    console.log("Button handler error:", err.message);
-  }
-});
 
 client.once("clientReady", () => {
   console.log(`🏆 CUP LIVE BOT ONLINE: ${client.user.tag}`);
