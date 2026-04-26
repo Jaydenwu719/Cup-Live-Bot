@@ -5,11 +5,11 @@ const PORT = process.env.PORT || 3000;
 
 const {
   Client,
+  GatewayIntentBits,
+  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  GatewayIntentBits,
-  EmbedBuilder
+  ButtonStyle
 } = require("discord.js");
 
 app.use(express.json());
@@ -43,14 +43,13 @@ let cup = {
   game: "none",
   round: 1,
 
-  scores: {},
+  currentGame: "overall", // default view
 
-  overall: {},          // 🔥 REQUIRED FIX
-  previousRankings: {}, // 🔥 REQUIRED FIX
-
-  currentGame: "",
+  overall: {},
 
   games: {},
+
+  page: 0,
 
   updatedAt: Date.now()
 };
@@ -119,8 +118,12 @@ async function updateLeaderboard() {
     const channel = await client.channels.fetch(cup.leaderboardChannelId);
     const msg = await channel.messages.fetch(cup.leaderboardMessageId);
 
-    const sorted = Object.entries(cup.overall)
-      .sort((a, b) => b[1].points - a[1].points);
+    const sorted = Object.entries(dataSource)
+    const dataSource =
+  cup.currentGame === "overall"
+    ? cup.overall
+    : cup.games[cup.currentGame]?.leaderboard || {};
+      sort((a, b) => b[1].points - a[1].points);
 
     const perPage = 6;
     if (!cup.page) cup.page = 0;
@@ -130,18 +133,28 @@ async function updateLeaderboard() {
 
     let desc = "";
 
-    slice.forEach(([id, data], i) => {
-      const rank = start + i + 1;
+    let lastPoints = null;
+    let rank = start + 1;
 
-      // 🏅 CLEAN RANK STYLE
+    slice.forEach(([id, data], i) => {
+
+      // 🧠 SAME POINTS = SAME RANK
+      if (lastPoints !== null && data.points < lastPoints) {
+        rank = start + i + 1;
+      }
+
+      lastPoints = data.points;
+
+      // 🏅 rank styling
       let rankDisplay;
       if (rank === 1) rankDisplay = "🥇";
       else if (rank === 2) rankDisplay = "🥈";
       else if (rank === 3) rankDisplay = "🥉";
       else rankDisplay = `✨ ${rank}.`;
 
-      // 🔼🔽➡️ ARROWS
-      const prev = cup.previousRankings[id];
+      // 📊 movement arrows
+      const prev =
+  cup.games[cup.currentGame]?.previousRankings?.[id];
       let arrow = "";
 
       if (prev !== undefined) {
@@ -150,27 +163,70 @@ async function updateLeaderboard() {
         else arrow = "➡️";
       }
 
-      cup.previousRankings[id] = rank;
+      if (!cup.games[cup.currentGame].previousRankings) {
+  cup.games[cup.currentGame].previousRankings = {};
+}
 
-      // ✨ GLOW STYLE
-      desc += `${rankDisplay} <@${id}> • **${data.points} pts** ${arrow}\n`;
+cup.games[cup.currentGame].previousRankings[id] = rank;
+
+      // ✨ clean output
+      desc += `${rankDisplay} ${arrow} <@${id}> • **${data.points} pts**\n`;
     });
 
     if (!desc) desc = "🌌 No competitors yet...";
 
     const embed = new EmbedBuilder()
-      .setTitle(`✨ COSMIC CUP — LIVE ✨`)
+      .setTitle("✨ COSMIC CUP — LIVE ✨")
       .setDescription(
         `🎮 **${cup.currentGame || "No Game"}**\n\n` +
         `━━━━━━━━━━━━━━\n` +
         desc +
         `━━━━━━━━━━━━━━`
       )
-      .setColor(0xA855F7) // purple glow
+      .setColor(0xA855F7)
       .setFooter({ text: `Page ${cup.page + 1} • Round ${cup.round}` })
       .setTimestamp();
 
-    await msg.edit({ embeds: [embed] });
+    const { StringSelectMenuBuilder } = require("discord.js");
+
+const options = [
+  {
+    label: "🏆 Overall",
+    value: "overall",
+    description: "All games combined"
+  }
+];
+
+// add current game dynamically
+for (const game of Object.keys(cup.games)) {
+  options.push({
+    label: `🎮 ${game}`,
+    value: game,
+    description: `Leaderboard for ${game}`
+  });
+}
+
+const row = new ActionRowBuilder().addComponents(
+  new StringSelectMenuBuilder()
+    .setCustomId("leaderboard_select")
+    .setPlaceholder("Select leaderboard view")
+    .addOptions(options),
+
+  new ButtonBuilder()
+    .setCustomId("prev")
+    .setLabel("⬅️")
+    .setStyle(ButtonStyle.Secondary),
+
+  new ButtonBuilder()
+    .setCustomId("next")
+    .setLabel("➡️")
+    .setStyle(ButtonStyle.Secondary)
+);
+
+    await msg.edit({
+      embeds: [embed],
+      components: [row]
+    });
 
   } catch (err) {
     console.log("❌ leaderboard update failed:", err.message);
@@ -180,19 +236,37 @@ async function updateLeaderboard() {
 // ================= COMMANDS =================
 
 client.on("interactionCreate", async (i) => {
-  if (!i.isChatInputCommand()) return;
+
+  // dropdown
+  if (i.isStringSelectMenu()) {
+    if (i.customId === "leaderboard_select") {
+      cup.currentGame = i.values[0];
+      cup.page = 0;
+      await updateLeaderboard();
+      return i.deferUpdate();
+    }
+  }
+
+  // buttons
+  if (!i.isButton()) return;
 
   // 🏆 START
 if (i.commandName === "start") {
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
 
-  cup.game = i.options.getString("game");
-  cup.currentGame = cup.game;
-  cup.page = 0;
+const gameName = i.options.getString("game");
 
-  initGame(cup.game);
-  cup.previousRankings = {};
+cup.game = gameName;
+cup.currentGame = gameName;
+cup.page = 0;
+
+if (!cup.games[gameName]) {
+  cup.games[gameName] = {
+    leaderboard: {},
+    previousRankings: {}
+  };
+}
 
   const msg = await i.channel.send({
   embeds: [
@@ -226,11 +300,15 @@ if (i.commandName === "score") {
 
   const game = cup.games[cup.currentGame];
 
-  initPlayer(game.leaderboard, user.id, user.username);
-  initPlayer(cup.overall, user.id, user.username);
+  const game = cup.games[cup.currentGame];
 
-  game.leaderboard[user.id].points += pts;
-  cup.overall[user.id].points += pts;
+if (!game) return i.reply("⚠️ Game not found");
+
+initPlayer(game.leaderboard, user.id, user.username);
+initPlayer(cup.overall, user.id, user.username);
+
+game.leaderboard[user.id].points += pts;
+cup.overall[user.id].points += pts;
 
 try {
   await updateLeaderboard();
@@ -333,8 +411,13 @@ cup.overall[winner.id].points += winPoints;
 client.on("interactionCreate", async (i) => {
   if (!i.isButton()) return;
 
-  if (i.customId === "next") cup.page++;
-  if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
+  if (i.customId === "next") {
+    cup.page++;
+  }
+
+  if (i.customId === "prev") {
+    cup.page = Math.max(0, cup.page - 1);
+  }
 
   await updateLeaderboard();
 
