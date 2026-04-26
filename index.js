@@ -128,23 +128,19 @@ async function updateLeaderboard() {
 
     if (!desc) desc = "🌌 No players yet...";
 
-    const msg = await i.channel.send({
-  embeds: [
-    new EmbedBuilder()
+    const embed = new EmbedBuilder()
       .setTitle("🏆 LIVE LEADERBOARD")
-      .setDescription("🌌 No players yet...")
+      .setDescription(desc)
       .setColor(0x00ffcc)
-  ]
-});
+      .setFooter({ text: `Round ${cup.round} • ${cup.currentGame}` })
+      .setTimestamp();
+
+    await msg.edit({ embeds: [embed] });
 
   } catch (err) {
     console.log("❌ leaderboard update failed:", err.message);
   }
 }
-
-if (!cup.games) cup.games = {};
-if (!cup.overall) cup.overall = {};
-if (!cup.previousRankings) cup.previousRankings = {};
 
 // ================= COMMANDS =================
 
@@ -162,12 +158,14 @@ if (i.commandName === "start") {
   initGame(cup.game);
   cup.previousRankings = {};
 
-  const embed = new EmbedBuilder()
-    .setTitle(`🏆 CUP LIVE STARTED`)
-    .setDescription(`Game: ${cup.game}`)
-    .setColor(0x00ffcc);
-
-  const msg = await i.channel.send({ embeds: [embed] });
+  const msg = await i.channel.send({
+  embeds: [
+    new EmbedBuilder()
+      .setTitle("🏆 LIVE LEADERBOARD")
+      .setDescription("🌌 No players yet...")
+      .setColor(0x00ffcc)
+  ]
+});
 
   cup.leaderboardMessageId = msg.id;
   cup.leaderboardChannelId = i.channel.id;
@@ -199,7 +197,7 @@ if (i.commandName === "score") {
   cup.overall[user.id].points += pts;
 
 try {
-  await updateLeaderboard(channel);
+  await updateLeaderboard();
 } catch (err) {
   console.log("Leaderboard safe fail:", err.message);
 }
