@@ -103,6 +103,45 @@ function buildLeaderboard(page = 0) {
   return desc || "No players yet";
 }
 
+// ================= LIVE LEADERBOARD =================
+async function updateLeaderboard() {
+  try {
+    if (!cup.leaderboardMessageId || !cup.leaderboardChannelId) return;
+
+    const channel = await client.channels.fetch(cup.leaderboardChannelId);
+    const msg = await channel.messages.fetch(cup.leaderboardMessageId);
+
+    const sorted = Object.entries(cup.overall)
+      .sort((a, b) => b[1].points - a[1].points);
+
+    let desc = "";
+
+    sorted.slice(0, 10).forEach(([id, data], i) => {
+      const medal =
+        i === 0 ? "🥇" :
+        i === 1 ? "🥈" :
+        i === 2 ? "🥉" :
+        `#${i + 1}`;
+
+      desc += `${medal} <@${id}> — **${data.points} pts**\n`;
+    });
+
+    if (!desc) desc = "🌌 No players yet...";
+
+    const msg = await i.channel.send({
+  embeds: [
+    new EmbedBuilder()
+      .setTitle("🏆 LIVE LEADERBOARD")
+      .setDescription("🌌 No players yet...")
+      .setColor(0x00ffcc)
+  ]
+});
+
+  } catch (err) {
+    console.log("❌ leaderboard update failed:", err.message);
+  }
+}
+
 if (!cup.games) cup.games = {};
 if (!cup.overall) cup.overall = {};
 if (!cup.previousRankings) cup.previousRankings = {};
@@ -160,7 +199,6 @@ if (i.commandName === "score") {
   cup.overall[user.id].points += pts;
 
 try {
-  const channel = await client.channels.fetch(cup.leaderboardChannelId);
   await updateLeaderboard(channel);
 } catch (err) {
   console.log("Leaderboard safe fail:", err.message);
@@ -225,8 +263,7 @@ cup.overall[winner.id].points += winPoints;
   // 📡 update live overlay
 
   // 📊 update Discord leaderboard message (if you use it)
-  const channel = await i.client.channels.fetch(cup.leaderboardChannelId);
-  updateLeaderboard(channel).catch(() => {});
+  updateLeaderboard();
 
   return i.reply(`🏁 ${winner.username} wins +1 point`);
 }
