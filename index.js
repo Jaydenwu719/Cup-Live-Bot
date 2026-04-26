@@ -300,8 +300,6 @@ if (i.commandName === "score") {
 
   const game = cup.games[cup.currentGame];
 
-  const game = cup.games[cup.currentGame];
-
 if (!game) return i.reply("⚠️ Game not found");
 
 initPlayer(game.leaderboard, user.id, user.username);
@@ -330,8 +328,6 @@ if (i.commandName === "match") {
   if (!cup.currentGame || !cup.games[cup.currentGame]) {
     return i.reply("⚠️ No active game. Use /start first.");
   }
-
-  const game = cup.games[cup.currentGame];
 
   const matchId = `${winner.id}_vs_${loser.id}`;
 
