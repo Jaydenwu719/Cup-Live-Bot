@@ -17,17 +17,16 @@ app.use(express.json());
 // ================= STATE =================
 
 let cup = {
-  game: "none",
-  round: 1,
   currentGame: "overall",
   overall: {},
   games: {},
   page: 0,
   leaderboardMessageId: null,
-  leaderboardChannelId: null
+  leaderboardChannelId: null,
+  round: 1
 };
 
-// ================= EXPRESS API =================
+// ================= EXPRESS =================
 
 app.get("/data", (req, res) => {
   res.json(cup);
@@ -44,11 +43,11 @@ app.listen(PORT, () => {
 
 // ================= DISCORD =================
 
-const TOKEN = process.env.TOKEN;
-
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
+
+const TOKEN = process.env.TOKEN;
 
 // ================= HELPERS =================
 
@@ -67,34 +66,31 @@ function initGame(game) {
 }
 
 function initPlayer(obj, id, name) {
-  if (!obj[id]) {
-    obj[id] = { name, points: 0 };
-  }
+  if (!obj[id]) obj[id] = { name, points: 0 };
 }
 
 // ================= LEADERBOARD =================
 
 async function updateLeaderboard() {
   try {
-    if (!cup.leaderboardMessageId || !cup.leaderboardChannelId) return;
+    if (!cup.leaderboardMessageId) return;
 
     const channel = await client.channels.fetch(cup.leaderboardChannelId);
     const msg = await channel.messages.fetch(cup.leaderboardMessageId);
 
-    const gameKey = cup.currentGame;
-    const dataSource =
-      gameKey === "overall"
+    const data =
+      cup.currentGame === "overall"
         ? cup.overall
-        : cup.games[gameKey]?.leaderboard || {};
+        : cup.games[cup.currentGame]?.leaderboard || {};
 
-    const sorted = Object.entries(dataSource)
+    const sorted = Object.entries(data)
       .sort((a, b) => b[1].points - a[1].points);
 
     const perPage = 6;
     const start = cup.page * perPage;
     const slice = sorted.slice(start, start + perPage);
 
-    initGame(gameKey);
+    initGame(cup.currentGame);
 
     let desc = "";
 
@@ -107,7 +103,7 @@ async function updateLeaderboard() {
         i === 2 ? "🥉" :
         `✨ ${rank}.`;
 
-      const prev = cup.games[gameKey].previousRankings[id];
+      const prev = cup.games[cup.currentGame].previousRankings[id];
       let arrow = "";
 
       if (prev !== undefined) {
@@ -116,7 +112,7 @@ async function updateLeaderboard() {
         else arrow = "➡️";
       }
 
-      cup.games[gameKey].previousRankings[id] = rank;
+      cup.games[cup.currentGame].previousRankings[id] = rank;
 
       desc += `${medal} ${arrow} <@${id}> • **${data.points} pts**\n`;
     });
@@ -125,137 +121,114 @@ async function updateLeaderboard() {
 
     const embed = new EmbedBuilder()
       .setTitle("✨ COSMIC CUP — LIVE ✨")
-      .setDescription(
-        `🎮 **${cup.currentGame}**\n\n━━━━━━━━━━━━━━\n${desc}\n━━━━━━━━━━━━━━`
-      )
+      .setDescription(desc)
       .setColor(0xA855F7)
-      .setFooter({ text: `Page ${cup.page + 1} • Round ${cup.round}` })
-      .setTimestamp();
+      .setFooter({ text: `Page ${cup.page + 1} • Round ${cup.round}` });
 
-    const options = [
-      {
-        label: "🏆 Overall",
-        value: "overall",
-        description: "All games combined"
-      }
-    ];
+    const select = new StringSelectMenuBuilder()
+      .setCustomId("leaderboard_select")
+      .setPlaceholder("Select leaderboard view")
+      .addOptions([
+        { label: "🏆 Overall", value: "overall" },
+        ...Object.keys(cup.games).map(g => ({
+          label: `🎮 ${g}`,
+          value: g
+        }))
+      ]);
 
-    for (const game of Object.keys(cup.games)) {
-      options.push({
-        label: `🎮 ${game}`,
-        value: game,
-        description: `Leaderboard for ${game}`
-      });
-    }
+    const row1 = new ActionRowBuilder().addComponents(select);
 
-    const selectRow = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId("leaderboard_select")
-        .setPlaceholder("Select leaderboard view")
-        .addOptions(options)
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("prev").setLabel("⬅️").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("next").setLabel("➡️").setStyle(ButtonStyle.Secondary)
     );
 
-    const buttonRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("prev")
-        .setLabel("⬅️")
-        .setStyle(ButtonStyle.Secondary),
-
-      new ButtonBuilder()
-        .setCustomId("next")
-        .setLabel("➡️")
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    await msg.edit({
-      embeds: [embed],
-      components: [selectRow, buttonRow]
-    });
+    await msg.edit({ embeds: [embed], components: [row1, row2] });
 
   } catch (err) {
     console.log("Leaderboard error:", err.message);
   }
 }
 
-// ================= INTERACTIONS =================
+// ================= EVENTS =================
 
 client.on("interactionCreate", async (i) => {
   try {
 
-    // BUTTONS
+    // ================= BUTTONS =================
     if (i.isButton()) {
       if (i.customId === "next") cup.page++;
       if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
 
       await i.deferUpdate();
-      await updateLeaderboard();
-      return;
+      return updateLeaderboard();
     }
 
-    // DROPDOWN
+    // ================= DROPDOWN =================
     if (i.isStringSelectMenu()) {
-      if (i.customId === "leaderboard_select") {
-        cup.currentGame = i.values[0];
-        cup.page = 0;
-
-        initGame(cup.currentGame);
-        cup.games[cup.currentGame].previousRankings = {};
-
-        await i.deferUpdate();
-        await updateLeaderboard();
-        return;
-      }
-    }
-
-    if (!i.isChatInputCommand()) return;
-
-    // START
-    if (i.commandName === "start") {
-      if (!isRef(i.member))
-        return i.reply({ content: "Ref only", ephemeral: true });
-
-      const gameName = i.options.getString("game");
-
-      cup.currentGame = gameName;
+      cup.currentGame = i.values[0];
       cup.page = 0;
 
-      initGame(gameName);
+      initGame(cup.currentGame);
+
+      cup.games[cup.currentGame].previousRankings = {};
+
+      await i.deferUpdate();
+      return updateLeaderboard();
+    }
+
+    // ================= SLASH =================
+    if (!i.isChatInputCommand()) return;
+
+    // ALWAYS DEFER FIRST (THIS FIXES 10062)
+    await i.deferReply();
+
+    // ---------------- START ----------------
+    if (i.commandName === "start") {
+      if (!isRef(i.member))
+        return i.editReply("Ref only");
+
+      const game = i.options.getString("game");
+
+      cup.currentGame = game;
+      cup.page = 0;
+
+      initGame(game);
 
       const msg = await i.channel.send({
         embeds: [
           new EmbedBuilder()
             .setTitle("🏆 LIVE LEADERBOARD")
             .setDescription("🌌 No players yet...")
-            .setColor(0x00ffcc)
         ]
       });
 
       cup.leaderboardMessageId = msg.id;
       cup.leaderboardChannelId = i.channel.id;
 
-      await i.reply(`🏆 CUP STARTED\n🎮 ${gameName}`);
-      await updateLeaderboard();
+      await i.editReply(`Started ${game}`);
+      return updateLeaderboard();
     }
 
-    // SCORE
+    // ---------------- SCORE ----------------
     if (i.commandName === "score") {
       if (!isRef(i.member))
-        return i.reply({ content: "Ref only", ephemeral: true });
+        return i.editReply("Ref only");
 
       const user = i.options.getUser("user");
       const pts = i.options.getInteger("points");
 
-      const gameKey = cup.currentGame;
+      const game = cup.currentGame;
 
-      initGame(gameKey);
-      initPlayer(cup.games[gameKey].leaderboard, user.id, user.username);
+      initGame(game);
+      initPlayer(cup.games[game].leaderboard, user.id, user.username);
       initPlayer(cup.overall, user.id, user.username);
 
-      cup.games[gameKey].leaderboard[user.id].points += pts;
+      cup.games[game].leaderboard[user.id].points += pts;
       cup.overall[user.id].points += pts;
 
-      await i.reply(`📊 ${user.username} +${pts} pts`);
-      await updateLeaderboard();
+      await i.editReply(`${user.username} +${pts} pts`);
+      return updateLeaderboard();
     }
 
   } catch (err) {
@@ -266,7 +239,7 @@ client.on("interactionCreate", async (i) => {
 // ================= READY =================
 
 client.once("ready", () => {
-  console.log(`🏆 BOT ONLINE: ${client.user.tag}`);
+  console.log(`BOT ONLINE: ${client.user.tag}`);
 });
 
 client.login(TOKEN);
