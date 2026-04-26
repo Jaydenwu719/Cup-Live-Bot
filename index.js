@@ -207,12 +207,14 @@ for (const game of Object.keys(cup.games)) {
   });
 }
 
-const row = new ActionRowBuilder().addComponents(
+const selectRow = new ActionRowBuilder().addComponents(
   new StringSelectMenuBuilder()
     .setCustomId("leaderboard_select")
     .setPlaceholder("Select leaderboard view")
-    .addOptions(options),
+    .addOptions(options)
+);
 
+const buttonRow = new ActionRowBuilder().addComponents(
   new ButtonBuilder()
     .setCustomId("prev")
     .setLabel("⬅️")
@@ -226,7 +228,7 @@ const row = new ActionRowBuilder().addComponents(
 
     await msg.edit({
       embeds: [embed],
-      components: [row]
+      components: [selectRow, buttonRow]
     });
 
   } catch (err) {
