@@ -1,8 +1,16 @@
 const express = require("express");
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const {
+  Client,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  GatewayIntentBits,
+  EmbedBuilder
+} = require("discord.js");
 
 app.use(express.json());
 
@@ -103,7 +111,7 @@ function buildLeaderboard(page = 0) {
   return desc || "No players yet";
 }
 
-// ================= LIVE LEADERBOARD =================
+// ================= LIVE LEADERBOARD (PRO VERSION) =================
 async function updateLeaderboard() {
   try {
     if (!cup.leaderboardMessageId || !cup.leaderboardChannelId) return;
@@ -114,25 +122,52 @@ async function updateLeaderboard() {
     const sorted = Object.entries(cup.overall)
       .sort((a, b) => b[1].points - a[1].points);
 
+    const perPage = 6;
+    if (!cup.page) cup.page = 0;
+
+    const start = cup.page * perPage;
+    const slice = sorted.slice(start, start + perPage);
+
     let desc = "";
 
-    sorted.slice(0, 10).forEach(([id, data], i) => {
-      const medal =
-        i === 0 ? "🥇" :
-        i === 1 ? "🥈" :
-        i === 2 ? "🥉" :
-        `#${i + 1}`;
+    slice.forEach(([id, data], i) => {
+      const rank = start + i + 1;
 
-      desc += `${medal} <@${id}> — **${data.points} pts**\n`;
+      // 🏅 CLEAN RANK STYLE
+      let rankDisplay;
+      if (rank === 1) rankDisplay = "🥇";
+      else if (rank === 2) rankDisplay = "🥈";
+      else if (rank === 3) rankDisplay = "🥉";
+      else rankDisplay = `✨ ${rank}.`;
+
+      // 🔼🔽➡️ ARROWS
+      const prev = cup.previousRankings[id];
+      let arrow = "";
+
+      if (prev !== undefined) {
+        if (prev > rank) arrow = "⬆️";
+        else if (prev < rank) arrow = "⬇️";
+        else arrow = "➡️";
+      }
+
+      cup.previousRankings[id] = rank;
+
+      // ✨ GLOW STYLE
+      desc += `${rankDisplay} <@${id}> • **${data.points} pts** ${arrow}\n`;
     });
 
-    if (!desc) desc = "🌌 No players yet...";
+    if (!desc) desc = "🌌 No competitors yet...";
 
     const embed = new EmbedBuilder()
-      .setTitle("🏆 LIVE LEADERBOARD")
-      .setDescription(desc)
-      .setColor(0x00ffcc)
-      .setFooter({ text: `Round ${cup.round} • ${cup.currentGame}` })
+      .setTitle(`✨ COSMIC CUP — LIVE ✨`)
+      .setDescription(
+        `🎮 **${cup.currentGame || "No Game"}**\n\n` +
+        `━━━━━━━━━━━━━━\n` +
+        desc +
+        `━━━━━━━━━━━━━━`
+      )
+      .setColor(0xA855F7) // purple glow
+      .setFooter({ text: `Page ${cup.page + 1} • Round ${cup.round}` })
       .setTimestamp();
 
     await msg.edit({ embeds: [embed] });
@@ -154,6 +189,7 @@ if (i.commandName === "start") {
 
   cup.game = i.options.getString("game");
   cup.currentGame = cup.game;
+  cup.page = 0;
 
   initGame(cup.game);
   cup.previousRankings = {};
@@ -291,7 +327,18 @@ cup.overall[winner.id].points += winPoints;
 
   return i.reply(`🏆 FINAL CUP RESULTS\n\n${sorted}`);
 }
+});
 
+// ================= PAGINATION =================
+client.on("interactionCreate", async (i) => {
+  if (!i.isButton()) return;
+
+  if (i.customId === "next") cup.page++;
+  if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
+
+  await updateLeaderboard();
+
+  return i.deferUpdate();
 });
 
 client.once("clientReady", () => {
