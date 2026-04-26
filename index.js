@@ -174,8 +174,9 @@ cup.games[cup.currentGame].previousRankings[id] = rank;
       desc += `${rankDisplay} ${arrow} <@${id}> • **${data.points} pts**\n`;
     });
 
-    if (!desc) desc = "🌌 No competitors yet...";
-
+    if (!desc) {
+  desc = "```diff\n- 🌌 No competitors yet...\n```";
+}
     const embed = new EmbedBuilder()
       .setTitle("✨ COSMIC CUP — LIVE ✨")
       .setDescription(
@@ -245,7 +246,11 @@ client.on("interactionCreate", async (i) => {
     if (i.customId === "leaderboard_select") {
       cup.currentGame = i.values[0];
       cup.page = 0;
-      await updateLeaderboard();
+      try {
+  await updateLeaderboard();
+} catch (err) {
+  console.log("Leaderboard update error:", err.message);
+}
       return i.deferUpdate();
     }
   }
@@ -255,7 +260,11 @@ client.on("interactionCreate", async (i) => {
     if (i.customId === "next") cup.page++;
     if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
 
-    await updateLeaderboard();
+    try {
+  await updateLeaderboard();
+} catch (err) {
+  console.log("Leaderboard update error:", err.message);
+}
     return i.deferUpdate();
   }
 
@@ -264,7 +273,11 @@ client.on("interactionCreate", async (i) => {
 
   // 🏆 START
 if (i.commandName === "start") {
+  try {
   await updateLeaderboard();
+} catch (err) {
+  console.log("Leaderboard update error:", err.message);
+}
   if (!isRef(i.member))
     return i.reply({ content: "Ref only", ephemeral: true });
 
@@ -323,7 +336,11 @@ game.leaderboard[user.id].points += pts;
 cup.overall[user.id].points += pts;
 
 try {
+  try {
   await updateLeaderboard();
+} catch (err) {
+  console.log("Leaderboard update error:", err.message);
+}
 } catch (err) {
   console.log("Leaderboard safe fail:", err.message);
 }
@@ -422,17 +439,34 @@ cup.overall[winner.id].points += winPoints;
 client.on("interactionCreate", async (i) => {
   if (!i.isButton()) return;
 
-  if (i.customId === "next") {
-    cup.page++;
+  try {
+    // ⬅️ PAGE LOGIC FIRST
+    if (i.customId === "next") {
+      const maxPage = Math.max(
+        0,
+        Math.ceil(
+          Object.keys(
+            cup.games[cup.currentGame]?.leaderboard || cup.overall
+          ).length / 6
+        ) - 1
+      );
+
+      if (cup.page < maxPage) cup.page++;
+    }
+
+    if (i.customId === "prev") {
+      cup.page = Math.max(0, cup.page - 1);
+    }
+
+    // ⬅️ MUST ACKNOWLEDGE FIRST
+    await i.deferUpdate();
+
+    // ⬅️ THEN UPDATE
+    await updateLeaderboard();
+
+  } catch (err) {
+    console.log("Button handler error:", err.message);
   }
-
-  if (i.customId === "prev") {
-    cup.page = Math.max(0, cup.page - 1);
-  }
-
-  await updateLeaderboard();
-
-  return i.deferUpdate();
 });
 
 client.once("clientReady", () => {
