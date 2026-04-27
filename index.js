@@ -73,15 +73,17 @@ function initPlayer(obj, id, name) {
 
 async function updateLeaderboard() {
   try {
-    if (!cup.leaderboardMessageId) return;
+    if (!cup.leaderboardMessageId || !cup.leaderboardChannelId) return;
 
     const channel = await client.channels.fetch(cup.leaderboardChannelId);
     const msg = await channel.messages.fetch(cup.leaderboardMessageId);
 
+    const gameKey = cup.currentGame || "overall";
+
     const data =
-      cup.currentGame === "overall"
+      gameKey === "overall"
         ? cup.overall
-        : cup.games[cup.currentGame]?.leaderboard || {};
+        : cup.games[gameKey]?.leaderboard || {};
 
     const sorted = Object.entries(data)
       .sort((a, b) => b[1].points - a[1].points);
@@ -90,7 +92,7 @@ async function updateLeaderboard() {
     const start = cup.page * perPage;
     const slice = sorted.slice(start, start + perPage);
 
-    initGame(cup.currentGame);
+    initGame(gameKey);
 
     let desc = "";
 
@@ -103,7 +105,7 @@ async function updateLeaderboard() {
         i === 2 ? "🥉" :
         `✨ ${rank}.`;
 
-      const prev = cup.games[cup.currentGame].previousRankings[id];
+      const prev = cup.games[gameKey].previousRankings[id];
       let arrow = "";
 
       if (prev !== undefined) {
@@ -112,7 +114,7 @@ async function updateLeaderboard() {
         else arrow = "➡️";
       }
 
-      cup.games[cup.currentGame].previousRankings[id] = rank;
+      cup.games[gameKey].previousRankings[id] = rank;
 
       desc += `${medal} ${arrow} <@${id}> • **${data.points} pts**\n`;
     });
@@ -123,27 +125,9 @@ async function updateLeaderboard() {
       .setTitle("✨ COSMIC CUP — LIVE ✨")
       .setDescription(desc)
       .setColor(0xA855F7)
-      .setFooter({ text: `Page ${cup.page + 1} • Round ${cup.round}` });
+      .setFooter({ text: `Page ${cup.page + 1}` });
 
-    const select = new StringSelectMenuBuilder()
-      .setCustomId("leaderboard_select")
-      .setPlaceholder("Select leaderboard view")
-      .addOptions([
-        { label: "🏆 Overall", value: "overall" },
-        ...Object.keys(cup.games).map(g => ({
-          label: `🎮 ${g}`,
-          value: g
-        }))
-      ]);
-
-    const row1 = new ActionRowBuilder().addComponents(select);
-
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("prev").setLabel("⬅️").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("next").setLabel("➡️").setStyle(ButtonStyle.Secondary)
-    );
-
-    await msg.edit({ embeds: [embed], components: [row1, row2] });
+    await msg.edit({ embeds: [embed] });
 
   } catch (err) {
     console.log("Leaderboard error:", err.message);
@@ -185,30 +169,32 @@ client.on("interactionCreate", async (i) => {
 
     // ---------------- START ----------------
     if (i.commandName === "start") {
-      if (!isRef(i.member))
-        return i.editReply("Ref only");
+  if (!isRef(i.member))
+    return i.editReply("Ref only");
 
-      const game = i.options.getString("game");
+  const game = i.options.getString("game");
 
-      cup.currentGame = game;
-      cup.page = 0;
+  cup.currentGame = game;
+  cup.page = 0;
 
-      initGame(game);
+  initGame(game);
 
-      const msg = await i.channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("🏆 LIVE LEADERBOARD")
-            .setDescription("🌌 No players yet...")
-        ]
-      });
+  const msg = await i.channel.send({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle("🏆 LIVE LEADERBOARD")
+        .setDescription("🌌 Loading...")
+    ]
+  });
 
-      cup.leaderboardMessageId = msg.id;
-      cup.leaderboardChannelId = i.channel.id;
+  cup.leaderboardMessageId = msg.id;
+  cup.leaderboardChannelId = i.channel.id;
 
-      await i.editReply(`Started ${game}`);
-      return updateLeaderboard();
-    }
+  await i.editReply(`Started ${game}`);
+
+  // 🔥 IMPORTANT: force first render
+  await updateLeaderboard();
+}
 
     // ---------------- SCORE ----------------
     if (i.commandName === "score") {
@@ -235,6 +221,10 @@ client.on("interactionCreate", async (i) => {
     console.log("Interaction error:", err);
   }
 });
+
+setInterval(() => {
+  updateLeaderboard();
+}, 10000);
 
 // ================= READY =================
 
