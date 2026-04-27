@@ -299,9 +299,19 @@ client.on("interactionCreate", async (i) => {
 
       const ranked = buildRanks(sorted);
 
-      const final = ranked
-        .map(r => `${r.rank}. <@${r.id}> — ${r.player.points} pts`)
-        .join("\n");
+      const grouped = {};
+
+for (const r of ranked) {
+  if (!grouped[r.rank]) grouped[r.rank] = [];
+  grouped[r.rank].push(r);
+}
+
+const final = Object.entries(grouped)
+  .sort((a, b) => Number(a[0]) - Number(b[0]))
+  .map(([rank, players]) => {
+    return `#${rank} ${players.map(p => `<@${p.id}>`).join(", ")} — ${players[0].player.points} pts`;
+  })
+  .join("\n");
 
       return i.editReply(`🏆 FINAL RESULTS\n\n${final}`);
     }
