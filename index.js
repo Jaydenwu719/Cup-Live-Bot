@@ -86,7 +86,6 @@ async function updateLeaderboard() {
     const perPage = 6;
     const maxPage = Math.max(0, Math.ceil(sorted.length / perPage) - 1);
 
-    // clamp page
     if (cup.page > maxPage) cup.page = maxPage;
 
     const start = cup.page * perPage;
@@ -99,15 +98,12 @@ async function updateLeaderboard() {
     let rank = start;
 
     slice.forEach(([id, player], i) => {
-      if (i === 0) {
-        rank = start + 1;
-      } else if (player.points < lastPoints) {
-        rank++;
-      }
+      if (i === 0) rank = start + 1;
+      else if (player.points < lastPoints) rank++;
 
       lastPoints = player.points;
 
-      let medal =
+      const medal =
         rank === 1 ? "🥇" :
         rank === 2 ? "🥈" :
         rank === 3 ? "🥉" :
@@ -135,16 +131,10 @@ async function updateLeaderboard() {
       .setColor(0xA855F7)
       .setFooter({ text: `Page ${cup.page + 1} • Round ${cup.round}` });
 
-    // ===== DROPDOWN =====
-    const options = [
-      { label: "🏆 Overall", value: "overall" }
-    ];
-
-    for (const game of Object.keys(cup.games)) {
-      options.push({
-        label: `🎮 ${game}`,
-        value: game
-      });
+    // DROPDOWN
+    const options = [{ label: "🏆 Overall", value: "overall" }];
+    for (const g of Object.keys(cup.games)) {
+      options.push({ label: `🎮 ${g}`, value: g });
     }
 
     const selectRow = new ActionRowBuilder().addComponents(
@@ -154,7 +144,7 @@ async function updateLeaderboard() {
         .addOptions(options)
     );
 
-    // ===== BUTTONS =====
+    // BUTTONS
     const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("prev")
@@ -169,7 +159,6 @@ async function updateLeaderboard() {
         .setDisabled(cup.page >= maxPage)
     );
 
-    // ✅ THIS WAS MISSING (BIGGEST BUG)
     await msg.edit({
       embeds: [embed],
       components: [selectRow, buttonRow]
@@ -195,13 +184,8 @@ client.on("interactionCreate", async (i) => {
 
       const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
 
-      if (i.customId === "next" && cup.page < maxPage) {
-        cup.page++;
-      }
-
-      if (i.customId === "prev") {
-        cup.page = Math.max(0, cup.page - 1);
-      }
+      if (i.customId === "next" && cup.page < maxPage) cup.page++;
+      if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
 
       await i.deferUpdate();
       return updateLeaderboard();
@@ -222,9 +206,8 @@ client.on("interactionCreate", async (i) => {
     // ===== SLASH =====
     if (!i.isChatInputCommand()) return;
 
-    if (!i.deferred && !i.replied) {
-      await i.deferReply();
-    }
+    // 🚨 IMPORTANT: defer ONCE and ONLY HERE
+    await i.deferReply();
 
     // ===== START =====
     if (i.commandName === "start") {
