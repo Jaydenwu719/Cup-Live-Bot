@@ -17,13 +17,13 @@ app.use(express.json());
 // ================= STATE =================
 
 let cup = {
-  currentGame: "overall",
-  overall: {},          // cumulative across ALL rounds
-  games: {},            // per game stats
+  currentGame: null,
+  overall: {},
+  games: {},
   page: 0,
   leaderboardMessageId: null,
   leaderboardChannelId: null,
-  round: 1
+  round: 0
 };
 
 // ================= EXPRESS =================
@@ -62,25 +62,19 @@ function initPlayer(obj, id, name) {
   if (!obj[id]) obj[id] = { name, points: 0 };
 }
 
-// ================= RANK SYSTEM (TIES FIXED) =================
-
+// ⭐ TIE RANK SYSTEM
 function buildRanks(sorted) {
-  let results = [];
+  let rank = 1;
   let lastPoints = null;
-  let rank = 0;
 
-  for (let i = 0; i < sorted.length; i++) {
-    const [id, player] = sorted[i];
-
-    if (lastPoints === null || player.points < lastPoints) {
+  return sorted.map(([id, player], i) => {
+    if (i !== 0 && player.points < lastPoints) {
       rank = i + 1;
     }
-
     lastPoints = player.points;
-    results.push({ id, player, rank });
-  }
 
-  return results;
+    return { id, player, rank };
+  });
 }
 
 // ================= LEADERBOARD =================
@@ -106,37 +100,23 @@ async function updateLeaderboard() {
 
     const perPage = 6;
     const maxPage = Math.max(0, Math.ceil(ranked.length / perPage) - 1);
+
     cup.page = Math.min(cup.page, maxPage);
 
     const start = cup.page * perPage;
     const slice = ranked.slice(start, start + perPage);
 
-    initGame(gameKey);
-
     let desc = "";
 
-    for (const entry of slice) {
-      const { id, player, rank } = entry;
-
+    slice.forEach(({ id, player, rank }) => {
       const medal =
         rank === 1 ? "🥇" :
         rank === 2 ? "🥈" :
         rank === 3 ? "🥉" :
         `✨ ${rank}.`;
 
-      const prev = cup.games[gameKey].previousRankings[id];
-      let arrow = "";
-
-      if (prev !== undefined) {
-        if (prev > rank) arrow = "⬆️";
-        else if (prev < rank) arrow = "⬇️";
-        else arrow = "➡️";
-      }
-
-      cup.games[gameKey].previousRankings[id] = rank;
-
-      desc += `${medal} ${arrow} <@${id}> • **${player.points} pts**\n`;
-    }
+      desc += `${medal} <@${id}> • **${player.points} pts**\n`;
+    });
 
     if (!desc) desc = "🌌 No competitors yet...";
 
@@ -146,8 +126,7 @@ async function updateLeaderboard() {
       .setColor(0xA855F7)
       .setFooter({ text: `Page ${cup.page + 1}/${maxPage + 1}` });
 
-    // ================= DROPDOWN =================
-
+    // DROPDOWN
     const options = [
       { label: "🏆 Overall", value: "overall" },
       ...Object.keys(cup.games).map(g => ({
@@ -163,8 +142,7 @@ async function updateLeaderboard() {
         .addOptions(options)
     );
 
-    // ================= BUTTONS =================
-
+    // BUTTONS
     const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("prev")
@@ -197,14 +175,12 @@ client.on("interactionCreate", async (i) => {
     // ================= BUTTONS =================
     if (i.isButton()) {
       const gameKey = cup.currentGame || "overall";
-
       const data =
         gameKey === "overall"
           ? cup.overall
           : cup.games[gameKey]?.leaderboard || {};
 
-      const totalUsers = Object.keys(data).length;
-      const maxPage = Math.max(0, Math.ceil(totalUsers / 6) - 1);
+      const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
 
       if (i.customId === "next") cup.page++;
       if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
@@ -217,17 +193,8 @@ client.on("interactionCreate", async (i) => {
 
     // ================= DROPDOWN =================
     if (i.isStringSelectMenu()) {
-      const selected = i.values?.[0];
-      if (!selected) return i.deferUpdate();
-
-      cup.currentGame = selected;
+      cup.currentGame = i.values[0];
       cup.page = 0;
-
-      initGame(cup.currentGame);
-
-      if (cup.games[cup.currentGame]) {
-        cup.games[cup.currentGame].previousRankings = {};
-      }
 
       await i.deferUpdate();
       return updateLeaderboard();
@@ -238,7 +205,7 @@ client.on("interactionCreate", async (i) => {
 
     await i.deferReply();
 
-    // ================= START (NEW ROUND) =================
+    // ================= START =================
     if (i.commandName === "start") {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
@@ -250,18 +217,12 @@ client.on("interactionCreate", async (i) => {
 
       initGame(game);
 
-      let msg;
-
-      if (cup.leaderboardMessageId) {
-        const channel = await client.channels.fetch(cup.leaderboardChannelId);
-        msg = await channel.messages.fetch(cup.leaderboardMessageId);
-      } else {
-        msg = await i.channel.send({
+      if (!cup.leaderboardMessageId) {
+        const msg = await i.channel.send({
           embeds: [
             new EmbedBuilder()
               .setTitle("🏆 LIVE LEADERBOARD")
               .setDescription("🌌 Loading...")
-              .setColor(0xA855F7)
           ]
         });
 
@@ -273,7 +234,7 @@ client.on("interactionCreate", async (i) => {
       return updateLeaderboard();
     }
 
-    // ================= SCORE (SILENT + SAFE) =================
+    // ================= SCORE =================
     if (i.commandName === "score") {
       if (!isRef(i.member)) return;
 
@@ -281,7 +242,7 @@ client.on("interactionCreate", async (i) => {
       const pts = i.options.getInteger("points");
       const game = cup.currentGame;
 
-      if (!game || game === null) return i.editReply("No active round");
+      if (!game) return;
 
       initGame(game);
       initPlayer(cup.games[game].leaderboard, user.id, user.username);
@@ -290,7 +251,7 @@ client.on("interactionCreate", async (i) => {
       cup.games[game].leaderboard[user.id].points += pts;
       cup.overall[user.id].points += pts;
 
-      await updateLeaderboard();
+      updateLeaderboard();
 
       const m = await i.channel.send({
         content: `${user.username} has scored`
@@ -298,58 +259,41 @@ client.on("interactionCreate", async (i) => {
 
       setTimeout(() => m.delete().catch(() => {}), 3000);
 
-      return;
+      return i.deleteReply().catch(() => {});
     }
 
     // ================= END ROUND =================
     if (i.commandName === "end") {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
-      const ended = cup.currentGame;
       cup.currentGame = null;
-
-      return i.editReply(`🏁 Round ${cup.round} ended — ${ended ?? "none"}`);
+      return i.editReply(`🏁 Round ${cup.round} ended`);
     }
 
     // ================= END CUP =================
     if (i.commandName === "end-cup") {
-  if (!isRef(i.member)) return i.editReply("Ref only");
+      if (!isRef(i.member)) return i.editReply("Ref only");
 
-  // merge ALL game leaderboards into one total
-  const totals = {};
+      const sorted = Object.entries(cup.overall)
+        .sort((a, b) => b[1].points - a[1].points);
 
-  for (const game of Object.values(cup.games)) {
-    for (const [id, player] of Object.entries(game.leaderboard)) {
-      if (!totals[id]) {
-        totals[id] = { name: player.name, points: 0 };
+      if (sorted.length === 0) {
+        return i.editReply("🏆 No scores yet.");
       }
-      totals[id].points += player.points;
+
+      const ranked = buildRanks(sorted);
+
+      const final = ranked
+        .map(r => `${r.rank}. <@${r.id}> — ${r.player.points} pts`)
+        .join("\n");
+
+      return i.editReply(`🏆 FINAL RESULTS\n\n${final}`);
     }
+
+  } catch (err) {
+    console.log("Interaction error:", err);
   }
-
-  // also include any direct overall values (if used)
-  for (const [id, player] of Object.entries(cup.overall || {})) {
-    if (!totals[id]) {
-      totals[id] = { name: player.name, points: 0 };
-    }
-    totals[id].points += player.points;
-  }
-
-  const sorted = Object.entries(totals)
-    .sort((a, b) => b[1].points - a[1].points);
-
-  if (sorted.length === 0) {
-    return i.editReply("🏆 No scores yet.");
-  }
-
-  const ranked = buildRanks(sorted);
-
-  const final = ranked
-    .map(r => `${r.rank}. <@${r.id}> — ${r.player.points} pts`)
-    .join("\n");
-
-  return i.editReply(`🏆 FINAL CUP RESULTS\n\n${final}`);
-}
+});
 
 // ================= READY =================
 
