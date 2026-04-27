@@ -17,7 +17,7 @@ app.use(express.json());
 // ================= STATE =================
 
 let cup = {
-  currentGame: null,
+  currentGame: "overall",
   overall: {},
   games: {},
   page: 0,
@@ -28,9 +28,7 @@ let cup = {
 
 // ================= EXPRESS =================
 
-app.get("/data", (req, res) => {
-  res.json(cup);
-});
+app.get("/data", (req, res) => res.json(cup));
 
 app.listen(PORT, () => {
   console.log("SERVER RUNNING:", PORT);
@@ -68,7 +66,7 @@ function initPlayer(obj, id, name) {
 
 async function updateLeaderboard() {
   try {
-    if (!cup.leaderboardMessageId || !cup.leaderboardChannelId) return;
+    if (!cup.leaderboardMessageId) return;
 
     const channel = await client.channels.fetch(cup.leaderboardChannelId);
     const msg = await channel.messages.fetch(cup.leaderboardMessageId);
@@ -93,46 +91,38 @@ async function updateLeaderboard() {
 
     initGame(gameKey);
 
+    // ================= TIED RANK SYSTEM =================
     let desc = "";
+    let lastPoints = null;
+    let rank = start + 1;
 
-let lastPoints = null;
-let currentRank = start + 1;
-let displayRank = start + 1;
+    slice.forEach(([id, player], i) => {
 
-slice.forEach(([id, player], i) => {
+      if (i !== 0 && player.points < lastPoints) {
+        rank = start + i + 1;
+      }
 
-  // 👇 SAME POINTS = SAME RANK
-  if (i === 0) {
-    displayRank = start + 1;
-  } else {
-    if (player.points < lastPoints) {
-      displayRank = currentRank;
-    }
-  }
+      lastPoints = player.points;
 
-  lastPoints = player.points;
+      const medal =
+        rank === 1 ? "🥇" :
+        rank === 2 ? "🥈" :
+        rank === 3 ? "🥉" :
+        `✨ ${rank}.`;
 
-  const medal =
-    displayRank === 1 ? "🥇" :
-    displayRank === 2 ? "🥈" :
-    displayRank === 3 ? "🥉" :
-    `✨ ${displayRank}.`;
+      const prev = cup.games[gameKey].previousRankings[id];
+      let arrow = "";
 
-  const prev = cup.games[gameKey].previousRankings[id];
-  let arrow = "";
+      if (prev !== undefined) {
+        if (prev > rank) arrow = "⬆️";
+        else if (prev < rank) arrow = "⬇️";
+        else arrow = "➡️";
+      }
 
-  if (prev !== undefined) {
-    if (prev > displayRank) arrow = "⬆️";
-    else if (prev < displayRank) arrow = "⬇️";
-    else arrow = "➡️";
-  }
+      cup.games[gameKey].previousRankings[id] = rank;
 
-  cup.games[gameKey].previousRankings[id] = displayRank;
-
-  desc += `${medal} ${arrow} <@${id}> • **${player.points} pts**\n`;
-
-  currentRank++;
-});
+      desc += `${medal} ${arrow} <@${id}> • **${player.points} pts**\n`;
+    });
 
     if (!desc) desc = "🌌 No competitors yet...";
 
@@ -142,7 +132,7 @@ slice.forEach(([id, player], i) => {
       .setColor(0xA855F7)
       .setFooter({ text: `Page ${cup.page + 1}/${maxPage + 1}` });
 
-    // DROPDOWN
+    // ================= DROPDOWN =================
     const options = [
       { label: "🏆 Overall", value: "overall" },
       ...Object.keys(cup.games).map(g => ({
@@ -158,7 +148,7 @@ slice.forEach(([id, player], i) => {
         .addOptions(options)
     );
 
-    // BUTTONS
+    // ================= BUTTONS =================
     const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("prev")
@@ -224,7 +214,7 @@ client.on("interactionCreate", async (i) => {
 
     await i.deferReply();
 
-    // ================= START =================
+    // ================= START (REUSES SAME MESSAGE) =================
     if (i.commandName === "start") {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
@@ -236,17 +226,25 @@ client.on("interactionCreate", async (i) => {
 
       initGame(game);
 
-      const msg = await i.channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("🏆 LIVE LEADERBOARD")
-            .setDescription("🌌 Loading...")
-            .setColor(0xA855F7)
-        ]
-      });
+      let msg;
 
-      cup.leaderboardMessageId = msg.id;
-      cup.leaderboardChannelId = i.channel.id;
+      // 🔥 ALWAYS REUSE SAME MESSAGE (NO DUPLICATES)
+      if (cup.leaderboardMessageId) {
+        const channel = await client.channels.fetch(cup.leaderboardChannelId);
+        msg = await channel.messages.fetch(cup.leaderboardMessageId);
+      } else {
+        msg = await i.channel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("🏆 LIVE LEADERBOARD")
+              .setDescription("🌌 Loading...")
+              .setColor(0xA855F7)
+          ]
+        });
+
+        cup.leaderboardMessageId = msg.id;
+        cup.leaderboardChannelId = i.channel.id;
+      }
 
       await i.editReply(`🚀 Round ${cup.round} started — ${game}`);
       return updateLeaderboard();
@@ -254,34 +252,23 @@ client.on("interactionCreate", async (i) => {
 
     // ================= SCORE (NO MESSAGE) =================
     if (i.commandName === "score") {
-  if (!isRef(i.member)) return;
+      if (!isRef(i.member)) return;
 
-  const user = i.options.getUser("user");
-  const pts = i.options.getInteger("points");
-  const game = cup.currentGame;
+      const user = i.options.getUser("user");
+      const pts = i.options.getInteger("points");
+      const game = cup.currentGame;
 
-  if (!game) return;
+      if (!game) return;
 
-  initGame(game);
-  initPlayer(cup.games[game].leaderboard, user.id, user.username);
-  initPlayer(cup.overall, user.id, user.username);
+      initGame(game);
+      initPlayer(cup.games[game].leaderboard, user.id, user.username);
+      initPlayer(cup.overall, user.id, user.username);
 
-  cup.games[game].leaderboard[user.id].points += pts;
-  cup.overall[user.id].points += pts;
+      cup.games[game].leaderboard[user.id].points += pts;
+      cup.overall[user.id].points += pts;
 
-  await updateLeaderboard();
-
-  // 👇 TEMP MESSAGE THAT AUTO-DELETES
-  const m = await i.channel.send({
-    content: `📊 **${user.username} has scored +${pts} pts**`
-  });
-
-  setTimeout(() => {
-    m.delete().catch(() => {});
-  }, 3000);
-
-  return;
-}
+      return updateLeaderboard(); // silent
+    }
 
     // ================= END ROUND =================
     if (i.commandName === "end") {
