@@ -313,28 +313,43 @@ client.on("interactionCreate", async (i) => {
 
     // ================= END CUP =================
     if (i.commandName === "end-cup") {
-      if (!isRef(i.member)) return i.editReply("Ref only");
+  if (!isRef(i.member)) return i.editReply("Ref only");
 
-      const sorted = Object.entries(cup.overall || {})
-        .sort((a, b) => b[1].points - a[1].points);
+  // merge ALL game leaderboards into one total
+  const totals = {};
 
-      if (sorted.length === 0) {
-        return i.editReply("🏆 No scores yet.");
+  for (const game of Object.values(cup.games)) {
+    for (const [id, player] of Object.entries(game.leaderboard)) {
+      if (!totals[id]) {
+        totals[id] = { name: player.name, points: 0 };
       }
-
-      const ranked = buildRanks(sorted);
-
-      const final = ranked
-        .map(r => `${r.rank}. <@${r.id}> — ${r.player.points} pts`)
-        .join("\n");
-
-      return i.editReply(`🏆 FINAL RESULTS\n\n${final}`);
+      totals[id].points += player.points;
     }
-
-  } catch (err) {
-    console.log("Interaction error:", err);
   }
-});
+
+  // also include any direct overall values (if used)
+  for (const [id, player] of Object.entries(cup.overall || {})) {
+    if (!totals[id]) {
+      totals[id] = { name: player.name, points: 0 };
+    }
+    totals[id].points += player.points;
+  }
+
+  const sorted = Object.entries(totals)
+    .sort((a, b) => b[1].points - a[1].points);
+
+  if (sorted.length === 0) {
+    return i.editReply("🏆 No scores yet.");
+  }
+
+  const ranked = buildRanks(sorted);
+
+  const final = ranked
+    .map(r => `${r.rank}. <@${r.id}> — ${r.player.points} pts`)
+    .join("\n");
+
+  return i.editReply(`🏆 FINAL CUP RESULTS\n\n${final}`);
+}
 
 // ================= READY =================
 
