@@ -131,7 +131,6 @@ async function updateLeaderboard() {
       .setColor(0xA855F7)
       .setFooter({ text: `Page ${cup.page + 1}/${maxPage + 1}` });
 
-    // DROPDOWN
     const options = [
       { label: "🏆 Overall", value: "overall" },
       ...Object.keys(cup.games).map(g => ({
@@ -147,7 +146,6 @@ async function updateLeaderboard() {
         .addOptions(options)
     );
 
-    // BUTTONS
     const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("prev")
@@ -182,7 +180,7 @@ async function updateLeaderboard() {
 client.on("interactionCreate", async (i) => {
   try {
 
-    // ================= BUTTONS =================
+    // ===== BUTTONS =====
     if (i.isButton()) {
       const gameKey = cup.currentGame || "overall";
       const data =
@@ -206,7 +204,7 @@ client.on("interactionCreate", async (i) => {
       return updateLeaderboard();
     }
 
-    // ================= DROPDOWN =================
+    // ===== DROPDOWN =====
     if (i.isStringSelectMenu()) {
       cup.currentGame = i.values[0];
       cup.page = 0;
@@ -215,12 +213,12 @@ client.on("interactionCreate", async (i) => {
       return updateLeaderboard();
     }
 
-    // ================= SLASH =================
+    // ===== SLASH =====
     if (!i.isChatInputCommand()) return;
 
     await i.deferReply();
 
-    // ================= START =================
+    // ===== START =====
     if (i.commandName === "start") {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
@@ -231,7 +229,7 @@ client.on("interactionCreate", async (i) => {
       cup.page = 0;
 
       initGame(game);
-      cup.games[game].previousRankings = {}; // reset for new round
+      cup.games[game].previousRankings = {};
 
       if (!cup.leaderboardMessageId) {
         const msg = await i.channel.send({
@@ -250,7 +248,7 @@ client.on("interactionCreate", async (i) => {
       return updateLeaderboard();
     }
 
-    // ================= SCORE =================
+    // ===== SCORE =====
     if (i.commandName === "score") {
       if (!isRef(i.member)) return;
 
@@ -258,7 +256,7 @@ client.on("interactionCreate", async (i) => {
       const pts = i.options.getInteger("points");
       const game = cup.currentGame;
 
-      if (!game) return;
+      if (!game) return i.deleteReply().catch(() => {});
 
       initGame(game);
       initPlayer(cup.games[game].leaderboard, user.id, user.username);
@@ -278,7 +276,7 @@ client.on("interactionCreate", async (i) => {
       return i.deleteReply().catch(() => {});
     }
 
-    // ================= END ROUND =================
+    // ===== END ROUND =====
     if (i.commandName === "end") {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
@@ -286,7 +284,7 @@ client.on("interactionCreate", async (i) => {
       return i.editReply(`🏁 Round ${cup.round} ended`);
     }
 
-    // ================= END CUP =================
+    // ===== END CUP =====
     if (i.commandName === "end-cup") {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
