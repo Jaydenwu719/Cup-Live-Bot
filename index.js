@@ -23,7 +23,7 @@ let cup = {
   page: 0,
   leaderboardMessageId: null,
   leaderboardChannelId: null,
-  round: 1
+  round: 0
 };
 
 // ================= EXPRESS =================
@@ -126,10 +126,10 @@ async function updateLeaderboard() {
     if (!desc) desc = "🌌 No competitors yet...";
 
     const embed = new EmbedBuilder()
-      .setTitle("✨ COSMIC CUP — LIVE ✨")
+      .setTitle(`✨ COSMIC CUP — ROUND ${cup.round} ✨`)
       .setDescription(desc)
       .setColor(0xA855F7)
-      .setFooter({ text: `Page ${cup.page + 1} • Round ${cup.round}` });
+      .setFooter({ text: `Page ${cup.page + 1}` });
 
     // DROPDOWN
     const options = [{ label: "🏆 Overall", value: "overall" }];
@@ -187,7 +187,7 @@ client.on("interactionCreate", async (i) => {
       if (i.customId === "next" && cup.page < maxPage) cup.page++;
       if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
 
-      await i.deferUpdate(); // ✅ ONLY THIS
+      await i.deferUpdate();
       return updateLeaderboard();
     }
 
@@ -199,14 +199,13 @@ client.on("interactionCreate", async (i) => {
       initGame(cup.currentGame);
       cup.games[cup.currentGame].previousRankings = {};
 
-      await i.deferUpdate(); // ✅ ONLY THIS
+      await i.deferUpdate();
       return updateLeaderboard();
     }
 
     // ================= SLASH =================
     if (!i.isChatInputCommand()) return;
 
-    // 🚨 CRITICAL: defer IMMEDIATELY
     await i.deferReply();
 
     // ================= START =================
@@ -216,23 +215,32 @@ client.on("interactionCreate", async (i) => {
 
       const game = i.options.getString("game");
 
+      cup.round++; // ✅ NEW ROUND HERE
       cup.currentGame = game;
       cup.page = 0;
 
       initGame(game);
 
-      const msg = await i.channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("🏆 LIVE LEADERBOARD")
-            .setDescription("🌌 Loading...")
-        ]
-      });
+      let msg;
 
-      cup.leaderboardMessageId = msg.id;
-      cup.leaderboardChannelId = i.channel.id;
+      // ✅ REUSE MESSAGE INSTEAD OF SPAMMING
+      if (cup.leaderboardMessageId && cup.leaderboardChannelId) {
+        const channel = await client.channels.fetch(cup.leaderboardChannelId);
+        msg = await channel.messages.fetch(cup.leaderboardMessageId);
+      } else {
+        msg = await i.channel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("🏆 LIVE LEADERBOARD")
+              .setDescription("🌌 Loading...")
+          ]
+        });
 
-      await i.editReply(`Started ${game}`);
+        cup.leaderboardMessageId = msg.id;
+        cup.leaderboardChannelId = i.channel.id;
+      }
+
+      await i.editReply(`🚀 Round ${cup.round} started — ${game}`);
       return updateLeaderboard();
     }
 
@@ -256,12 +264,23 @@ client.on("interactionCreate", async (i) => {
       await i.editReply(`${user.username} +${pts} pts`);
       return updateLeaderboard();
     }
-
+    
     // ================= END ROUND =================
-    if (i.commandName === "end") {
-      cup.round++;
-      return i.editReply(`🏁 Round ${cup.round} started`);
-    }
+if (i.commandName === "end") {
+  if (!isRef(i.member))
+    return i.editReply("Ref only");
+
+  if (!cup.currentGame)
+    return i.editReply("⚠️ No active round");
+
+  const endedGame = cup.currentGame;
+
+  // Optional: lock scoring by clearing currentGame
+  cup.currentGame = null;
+
+  await i.editReply(`🏁 Round ${cup.round} ended — ${endedGame}`);
+  return;
+}
 
     // ================= END CUP =================
     if (i.commandName === "end-cup") {
