@@ -18,12 +18,12 @@ app.use(express.json());
 
 let cup = {
   currentGame: "overall",
-  overall: {},
-  games: {},
+  overall: {},          // cumulative across ALL rounds
+  games: {},            // per game stats
   page: 0,
   leaderboardMessageId: null,
   leaderboardChannelId: null,
-  round: 0
+  round: 1
 };
 
 // ================= EXPRESS =================
@@ -62,6 +62,27 @@ function initPlayer(obj, id, name) {
   if (!obj[id]) obj[id] = { name, points: 0 };
 }
 
+// ================= RANK SYSTEM (TIES FIXED) =================
+
+function buildRanks(sorted) {
+  let results = [];
+  let lastPoints = null;
+  let rank = 0;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const [id, player] = sorted[i];
+
+    if (lastPoints === null || player.points < lastPoints) {
+      rank = i + 1;
+    }
+
+    lastPoints = player.points;
+    results.push({ id, player, rank });
+  }
+
+  return results;
+}
+
 // ================= LEADERBOARD =================
 
 async function updateLeaderboard() {
@@ -81,28 +102,21 @@ async function updateLeaderboard() {
     const sorted = Object.entries(data)
       .sort((a, b) => b[1].points - a[1].points);
 
-    const perPage = 6;
-    const maxPage = Math.max(0, Math.ceil(sorted.length / perPage) - 1);
+    const ranked = buildRanks(sorted);
 
+    const perPage = 6;
+    const maxPage = Math.max(0, Math.ceil(ranked.length / perPage) - 1);
     cup.page = Math.min(cup.page, maxPage);
 
     const start = cup.page * perPage;
-    const slice = sorted.slice(start, start + perPage);
+    const slice = ranked.slice(start, start + perPage);
 
     initGame(gameKey);
 
-    // ================= TIED RANK SYSTEM =================
     let desc = "";
-    let lastPoints = null;
-    let rank = start + 1;
 
-    slice.forEach(([id, player], i) => {
-
-      if (i !== 0 && player.points < lastPoints) {
-        rank = start + i + 1;
-      }
-
-      lastPoints = player.points;
+    for (const entry of slice) {
+      const { id, player, rank } = entry;
 
       const medal =
         rank === 1 ? "🥇" :
@@ -122,7 +136,7 @@ async function updateLeaderboard() {
       cup.games[gameKey].previousRankings[id] = rank;
 
       desc += `${medal} ${arrow} <@${id}> • **${player.points} pts**\n`;
-    });
+    }
 
     if (!desc) desc = "🌌 No competitors yet...";
 
@@ -133,6 +147,7 @@ async function updateLeaderboard() {
       .setFooter({ text: `Page ${cup.page + 1}/${maxPage + 1}` });
 
     // ================= DROPDOWN =================
+
     const options = [
       { label: "🏆 Overall", value: "overall" },
       ...Object.keys(cup.games).map(g => ({
@@ -149,6 +164,7 @@ async function updateLeaderboard() {
     );
 
     // ================= BUTTONS =================
+
     const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("prev")
@@ -186,7 +202,8 @@ client.on("interactionCreate", async (i) => {
           ? cup.overall
           : cup.games[gameKey]?.leaderboard || {};
 
-      const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
+      const sorted = Object.keys(data);
+      const maxPage = Math.max(0, Math.ceil(sorted.length / 6) - 1);
 
       if (i.customId === "next") cup.page++;
       if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
@@ -214,7 +231,7 @@ client.on("interactionCreate", async (i) => {
 
     await i.deferReply();
 
-    // ================= START (REUSES SAME MESSAGE) =================
+    // ================= START (NEW ROUND) =================
     if (i.commandName === "start") {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
@@ -228,7 +245,6 @@ client.on("interactionCreate", async (i) => {
 
       let msg;
 
-      // 🔥 ALWAYS REUSE SAME MESSAGE (NO DUPLICATES)
       if (cup.leaderboardMessageId) {
         const channel = await client.channels.fetch(cup.leaderboardChannelId);
         msg = await channel.messages.fetch(cup.leaderboardMessageId);
@@ -250,7 +266,7 @@ client.on("interactionCreate", async (i) => {
       return updateLeaderboard();
     }
 
-    // ================= SCORE (NO MESSAGE) =================
+    // ================= SCORE (NO MESSAGE + AUTO DELETE TEXT) =================
     if (i.commandName === "score") {
       if (!isRef(i.member)) return;
 
@@ -267,7 +283,17 @@ client.on("interactionCreate", async (i) => {
       cup.games[game].leaderboard[user.id].points += pts;
       cup.overall[user.id].points += pts;
 
-      return updateLeaderboard(); // silent
+      // silent leaderboard update
+      updateLeaderboard();
+
+      // temporary message (auto delete after 3 sec)
+      const m = await i.channel.send({
+        content: `${user.username} has scored`
+      });
+
+      setTimeout(() => m.delete().catch(() => {}), 3000);
+
+      return;
     }
 
     // ================= END ROUND =================
@@ -281,11 +307,15 @@ client.on("interactionCreate", async (i) => {
     // ================= END CUP =================
     if (i.commandName === "end-cup") {
       const sorted = Object.entries(cup.overall)
-        .sort((a, b) => b[1].points - a[1].points)
-        .map(([id, p], i) => `${i + 1}. <@${id}> — ${p.points} pts`)
+        .sort((a, b) => b[1].points - a[1].points);
+
+      const ranked = buildRanks(sorted);
+
+      const final = ranked
+        .map(r => `${r.rank}. <@${r.id}> — ${r.player.points} pts`)
         .join("\n");
 
-      return i.editReply(`🏆 FINAL RESULTS\n\n${sorted}`);
+      return i.editReply(`🏆 FINAL RESULTS\n\n${final}`);
     }
 
   } catch (err) {
