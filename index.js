@@ -17,7 +17,7 @@ app.use(express.json());
 // ================= STATE =================
 
 let cup = {
-  currentGame: "overall",
+  currentGame: null,
   overall: {},
   games: {},
   page: 0,
@@ -86,7 +86,7 @@ async function updateLeaderboard() {
     const perPage = 6;
     const maxPage = Math.max(0, Math.ceil(sorted.length / perPage) - 1);
 
-    if (cup.page > maxPage) cup.page = maxPage;
+    cup.page = Math.min(cup.page, maxPage);
 
     const start = cup.page * perPage;
     const slice = sorted.slice(start, start + perPage);
@@ -94,14 +94,11 @@ async function updateLeaderboard() {
     initGame(gameKey);
 
     let desc = "";
-    let lastPoints = null;
-    let rank = start;
+
+    let rankBase = start;
 
     slice.forEach(([id, player], i) => {
-      if (i === 0) rank = start + 1;
-      else if (player.points < lastPoints) rank++;
-
-      lastPoints = player.points;
+      const rank = rankBase + i + 1;
 
       const medal =
         rank === 1 ? "🥇" :
@@ -129,13 +126,16 @@ async function updateLeaderboard() {
       .setTitle(`✨ COSMIC CUP — ROUND ${cup.round} ✨`)
       .setDescription(desc)
       .setColor(0xA855F7)
-      .setFooter({ text: `Page ${cup.page + 1}` });
+      .setFooter({ text: `Page ${cup.page + 1}/${maxPage + 1}` });
 
     // DROPDOWN
-    const options = [{ label: "🏆 Overall", value: "overall" }];
-    for (const g of Object.keys(cup.games)) {
-      options.push({ label: `🎮 ${g}`, value: g });
-    }
+    const options = [
+      { label: "🏆 Overall", value: "overall" },
+      ...Object.keys(cup.games).map(g => ({
+        label: `🎮 ${g}`,
+        value: g
+      }))
+    ];
 
     const selectRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -184,8 +184,10 @@ client.on("interactionCreate", async (i) => {
 
       const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
 
-      if (i.customId === "next" && cup.page < maxPage) cup.page++;
+      if (i.customId === "next") cup.page++;
       if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
+
+      cup.page = Math.min(cup.page, maxPage);
 
       await i.deferUpdate();
       return updateLeaderboard();
@@ -210,49 +212,41 @@ client.on("interactionCreate", async (i) => {
 
     // ================= START =================
     if (i.commandName === "start") {
-      if (!isRef(i.member))
-        return i.editReply("Ref only");
+      if (!isRef(i.member)) return i.editReply("Ref only");
 
       const game = i.options.getString("game");
 
-      cup.round++; // ✅ NEW ROUND HERE
+      cup.round++;
       cup.currentGame = game;
       cup.page = 0;
 
       initGame(game);
 
-      let msg;
+      const msg = await i.channel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🏆 LIVE LEADERBOARD")
+            .setDescription("🌌 Loading...")
+            .setColor(0xA855F7)
+        ]
+      });
 
-      // ✅ REUSE MESSAGE INSTEAD OF SPAMMING
-      if (cup.leaderboardMessageId && cup.leaderboardChannelId) {
-        const channel = await client.channels.fetch(cup.leaderboardChannelId);
-        msg = await channel.messages.fetch(cup.leaderboardMessageId);
-      } else {
-        msg = await i.channel.send({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle("🏆 LIVE LEADERBOARD")
-              .setDescription("🌌 Loading...")
-          ]
-        });
-
-        cup.leaderboardMessageId = msg.id;
-        cup.leaderboardChannelId = i.channel.id;
-      }
+      cup.leaderboardMessageId = msg.id;
+      cup.leaderboardChannelId = i.channel.id;
 
       await i.editReply(`🚀 Round ${cup.round} started — ${game}`);
       return updateLeaderboard();
     }
 
-    // ================= SCORE =================
+    // ================= SCORE (NO MESSAGE) =================
     if (i.commandName === "score") {
-      if (!isRef(i.member))
-        return i.editReply("Ref only");
+      if (!isRef(i.member)) return;
 
       const user = i.options.getUser("user");
       const pts = i.options.getInteger("points");
-
       const game = cup.currentGame;
+
+      if (!game) return;
 
       initGame(game);
       initPlayer(cup.games[game].leaderboard, user.id, user.username);
@@ -261,26 +255,16 @@ client.on("interactionCreate", async (i) => {
       cup.games[game].leaderboard[user.id].points += pts;
       cup.overall[user.id].points += pts;
 
-      await i.editReply(`${user.username} +${pts} pts`);
-      return updateLeaderboard();
+      return updateLeaderboard(); // silent update
     }
-    
+
     // ================= END ROUND =================
-if (i.commandName === "end") {
-  if (!isRef(i.member))
-    return i.editReply("Ref only");
+    if (i.commandName === "end") {
+      if (!isRef(i.member)) return i.editReply("Ref only");
 
-  if (!cup.currentGame)
-    return i.editReply("⚠️ No active round");
-
-  const endedGame = cup.currentGame;
-
-  // Optional: lock scoring by clearing currentGame
-  cup.currentGame = null;
-
-  await i.editReply(`🏁 Round ${cup.round} ended — ${endedGame}`);
-  return;
-}
+      cup.currentGame = null;
+      return i.editReply(`🏁 Round ${cup.round} ended`);
+    }
 
     // ================= END CUP =================
     if (i.commandName === "end-cup") {
@@ -299,7 +283,7 @@ if (i.commandName === "end") {
 
 // ================= READY =================
 
-client.once("clientReady", () => {
+client.once("ready", () => {
   console.log(`BOT ONLINE: ${client.user.tag}`);
 });
 
