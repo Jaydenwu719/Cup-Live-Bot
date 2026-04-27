@@ -95,30 +95,44 @@ async function updateLeaderboard() {
 
     let desc = "";
 
-    let rankBase = start;
+let lastPoints = null;
+let currentRank = start + 1;
+let displayRank = start + 1;
 
-    slice.forEach(([id, player], i) => {
-      const rank = rankBase + i + 1;
+slice.forEach(([id, player], i) => {
 
-      const medal =
-        rank === 1 ? "🥇" :
-        rank === 2 ? "🥈" :
-        rank === 3 ? "🥉" :
-        `✨ ${rank}.`;
+  // 👇 SAME POINTS = SAME RANK
+  if (i === 0) {
+    displayRank = start + 1;
+  } else {
+    if (player.points < lastPoints) {
+      displayRank = currentRank;
+    }
+  }
 
-      const prev = cup.games[gameKey].previousRankings[id];
-      let arrow = "";
+  lastPoints = player.points;
 
-      if (prev !== undefined) {
-        if (prev > rank) arrow = "⬆️";
-        else if (prev < rank) arrow = "⬇️";
-        else arrow = "➡️";
-      }
+  const medal =
+    displayRank === 1 ? "🥇" :
+    displayRank === 2 ? "🥈" :
+    displayRank === 3 ? "🥉" :
+    `✨ ${displayRank}.`;
 
-      cup.games[gameKey].previousRankings[id] = rank;
+  const prev = cup.games[gameKey].previousRankings[id];
+  let arrow = "";
 
-      desc += `${medal} ${arrow} <@${id}> • **${player.points} pts**\n`;
-    });
+  if (prev !== undefined) {
+    if (prev > displayRank) arrow = "⬆️";
+    else if (prev < displayRank) arrow = "⬇️";
+    else arrow = "➡️";
+  }
+
+  cup.games[gameKey].previousRankings[id] = displayRank;
+
+  desc += `${medal} ${arrow} <@${id}> • **${player.points} pts**\n`;
+
+  currentRank++;
+});
 
     if (!desc) desc = "🌌 No competitors yet...";
 
@@ -240,23 +254,34 @@ client.on("interactionCreate", async (i) => {
 
     // ================= SCORE (NO MESSAGE) =================
     if (i.commandName === "score") {
-      if (!isRef(i.member)) return;
+  if (!isRef(i.member)) return;
 
-      const user = i.options.getUser("user");
-      const pts = i.options.getInteger("points");
-      const game = cup.currentGame;
+  const user = i.options.getUser("user");
+  const pts = i.options.getInteger("points");
+  const game = cup.currentGame;
 
-      if (!game) return;
+  if (!game) return;
 
-      initGame(game);
-      initPlayer(cup.games[game].leaderboard, user.id, user.username);
-      initPlayer(cup.overall, user.id, user.username);
+  initGame(game);
+  initPlayer(cup.games[game].leaderboard, user.id, user.username);
+  initPlayer(cup.overall, user.id, user.username);
 
-      cup.games[game].leaderboard[user.id].points += pts;
-      cup.overall[user.id].points += pts;
+  cup.games[game].leaderboard[user.id].points += pts;
+  cup.overall[user.id].points += pts;
 
-      return updateLeaderboard(); // silent update
-    }
+  await updateLeaderboard();
+
+  // 👇 TEMP MESSAGE THAT AUTO-DELETES
+  const m = await i.channel.send({
+    content: `📊 **${user.username} has scored +${pts} pts**`
+  });
+
+  setTimeout(() => {
+    m.delete().catch(() => {});
+  }, 3000);
+
+  return;
+}
 
     // ================= END ROUND =================
     if (i.commandName === "end") {
