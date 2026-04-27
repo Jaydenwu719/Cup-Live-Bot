@@ -68,15 +68,17 @@ function buildRanks(sorted) {
   let lastPoints = null;
 
   return sorted.map(([id, player], i) => {
-    if (i !== 0 && player.points < lastPoints) {
-      rank = i + 1;
+    if (i === 0) {
+      rank = 1;
+    } else if (player.points < lastPoints) {
+      rank++; // ONLY increment by 1 (dense ranking)
     }
+
     lastPoints = player.points;
 
     return { id, player, rank };
   });
 }
-
 // ================= LEADERBOARD =================
 
 async function updateLeaderboard() {
