@@ -32,11 +32,6 @@ app.get("/data", (req, res) => {
   res.json(cup);
 });
 
-app.use((req, res, next) => {
-  res.set("Cache-Control", "no-store");
-  next();
-});
-
 app.listen(PORT, () => {
   console.log("SERVER RUNNING:", PORT);
 });
@@ -89,32 +84,47 @@ async function updateLeaderboard() {
       .sort((a, b) => b[1].points - a[1].points);
 
     const perPage = 6;
+    const maxPage = Math.max(0, Math.ceil(sorted.length / perPage) - 1);
+
+    // clamp page
+    if (cup.page > maxPage) cup.page = maxPage;
+
     const start = cup.page * perPage;
     const slice = sorted.slice(start, start + perPage);
 
     initGame(gameKey);
 
     let desc = "";
+    let lastPoints = null;
+    let rank = start;
 
-    slice.forEach(([id, data], i) => {
-      const rank = start + i + 1;
+    slice.forEach(([id, player], i) => {
+      if (i === 0) {
+        rank = start + 1;
+      } else if (player.points < lastPoints) {
+        rank++;
+      }
+
+      lastPoints = player.points;
 
       let medal =
-        i === 0 ? "🥇" :
-        i === 1 ? "🥈" :
-        i === 2 ? "🥉" :
+        rank === 1 ? "🥇" :
+        rank === 2 ? "🥈" :
+        rank === 3 ? "🥉" :
         `✨ ${rank}.`;
 
       const prev = cup.games[gameKey].previousRankings[id];
-      const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
+      let arrow = "";
 
-if (i.customId === "next") {
-  if (cup.page < maxPage) cup.page++;
-}
+      if (prev !== undefined) {
+        if (prev > rank) arrow = "⬆️";
+        else if (prev < rank) arrow = "⬇️";
+        else arrow = "➡️";
+      }
 
-if (i.customId === "prev") {
-  cup.page = Math.max(0, cup.page - 1);
-}
+      cup.games[gameKey].previousRankings[id] = rank;
+
+      desc += `${medal} ${arrow} <@${id}> • **${player.points} pts**\n`;
     });
 
     if (!desc) desc = "🌌 No competitors yet...";
@@ -123,17 +133,47 @@ if (i.customId === "prev") {
       .setTitle("✨ COSMIC CUP — LIVE ✨")
       .setDescription(desc)
       .setColor(0xA855F7)
-      .setFooter({ text: `Page ${cup.page + 1}` });
+      .setFooter({ text: `Page ${cup.page + 1} • Round ${cup.round}` });
 
-    const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
+    // ===== DROPDOWN =====
+    const options = [
+      { label: "🏆 Overall", value: "overall" }
+    ];
 
-    if (i.customId === "next") {
-    if (cup.page < maxPage) cup.page++;
+    for (const game of Object.keys(cup.games)) {
+      options.push({
+        label: `🎮 ${game}`,
+        value: game
+      });
     }
 
-    if (i.customId === "prev") {
-    cup.page = Math.max(0, cup.page - 1);
-    }
+    const selectRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("leaderboard_select")
+        .setPlaceholder("Select leaderboard")
+        .addOptions(options)
+    );
+
+    // ===== BUTTONS =====
+    const buttonRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("prev")
+        .setLabel("⬅️")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(cup.page === 0),
+
+      new ButtonBuilder()
+        .setCustomId("next")
+        .setLabel("➡️")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(cup.page >= maxPage)
+    );
+
+    // ✅ THIS WAS MISSING (BIGGEST BUG)
+    await msg.edit({
+      embeds: [embed],
+      components: [selectRow, buttonRow]
+    });
 
   } catch (err) {
     console.log("Leaderboard error:", err.message);
@@ -145,73 +185,75 @@ if (i.customId === "prev") {
 client.on("interactionCreate", async (i) => {
   try {
 
-    // ================= BUTTONS =================
+    // ===== BUTTONS =====
     if (i.isButton()) {
+      const gameKey = cup.currentGame || "overall";
+      const data =
+        gameKey === "overall"
+          ? cup.overall
+          : cup.games[gameKey]?.leaderboard || {};
+
       const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
 
-    if (i.customId === "next") {
-    if (cup.page < maxPage) cup.page++;
-    }
+      if (i.customId === "next" && cup.page < maxPage) {
+        cup.page++;
+      }
 
-    if (i.customId === "prev") {
-    cup.page = Math.max(0, cup.page - 1);
-    }
+      if (i.customId === "prev") {
+        cup.page = Math.max(0, cup.page - 1);
+      }
 
       await i.deferUpdate();
       return updateLeaderboard();
     }
 
-    // ================= DROPDOWN =================
+    // ===== DROPDOWN =====
     if (i.isStringSelectMenu()) {
       cup.currentGame = i.values[0];
       cup.page = 0;
 
       initGame(cup.currentGame);
-
       cup.games[cup.currentGame].previousRankings = {};
 
       await i.deferUpdate();
       return updateLeaderboard();
     }
 
-    // ================= SLASH =================
+    // ===== SLASH =====
     if (!i.isChatInputCommand()) return;
 
-    // ALWAYS DEFER FIRST (THIS FIXES 10062)
     if (!i.deferred && !i.replied) {
-  await i.deferReply();
-  }
+      await i.deferReply();
+    }
 
-    // ---------------- START ----------------
+    // ===== START =====
     if (i.commandName === "start") {
-  if (!isRef(i.member))
-    return i.editReply("Ref only");
+      if (!isRef(i.member))
+        return i.editReply("Ref only");
 
-  const game = i.options.getString("game");
+      const game = i.options.getString("game");
 
-  cup.currentGame = game;
-  cup.page = 0;
+      cup.currentGame = game;
+      cup.page = 0;
 
-  initGame(game);
+      initGame(game);
 
-  const msg = await i.channel.send({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle("🏆 LIVE LEADERBOARD")
-        .setDescription("🌌 Loading...")
-    ]
-  });
+      const msg = await i.channel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🏆 LIVE LEADERBOARD")
+            .setDescription("🌌 Loading...")
+        ]
+      });
 
-  cup.leaderboardMessageId = msg.id;
-  cup.leaderboardChannelId = i.channel.id;
+      cup.leaderboardMessageId = msg.id;
+      cup.leaderboardChannelId = i.channel.id;
 
-  await i.editReply(`Started ${game}`);
+      await i.editReply(`Started ${game}`);
+      return updateLeaderboard();
+    }
 
-  // 🔥 IMPORTANT: force first render
-  await updateLeaderboard();
-}
-
-    // ---------------- SCORE ----------------
+    // ===== SCORE =====
     if (i.commandName === "score") {
       if (!isRef(i.member))
         return i.editReply("Ref only");
@@ -232,30 +274,26 @@ client.on("interactionCreate", async (i) => {
       return updateLeaderboard();
     }
 
+    // ===== END ROUND =====
+    if (i.commandName === "end") {
+      cup.round++;
+      return i.editReply(`🏁 Round ${cup.round} started`);
+    }
+
+    // ===== END CUP =====
+    if (i.commandName === "end-cup") {
+      const sorted = Object.entries(cup.overall)
+        .sort((a, b) => b[1].points - a[1].points)
+        .map(([id, p], i) => `${i + 1}. <@${id}> — ${p.points} pts`)
+        .join("\n");
+
+      return i.editReply(`🏆 FINAL RESULTS\n\n${sorted}`);
+    }
+
   } catch (err) {
     console.log("Interaction error:", err);
   }
 });
-
-// ---------------- END ROUND ----------------
-if (i.commandName === "end") {
-  cup.round++;
-  return i.editReply(`🏁 Round ${cup.round} started`);
-}
-
-// ---------------- END CUP ----------------
-if (i.commandName === "end-cup") {
-  const sorted = Object.entries(cup.overall)
-    .sort((a, b) => b[1].points - a[1].points)
-    .map(([id, p], i) => `${i + 1}. <@${id}> — ${p.points} pts`)
-    .join("\n");
-
-  return i.editReply(`🏆 FINAL RESULTS\n\n${sorted}`);
-}
-
-setInterval(() => {
-  updateLeaderboard();
-}, 10000);
 
 // ================= READY =================
 
