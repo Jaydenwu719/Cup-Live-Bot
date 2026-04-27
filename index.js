@@ -174,7 +174,7 @@ async function updateLeaderboard() {
 client.on("interactionCreate", async (i) => {
   try {
 
-    // ===== BUTTONS =====
+    // ================= BUTTONS =================
     if (i.isButton()) {
       const gameKey = cup.currentGame || "overall";
       const data =
@@ -187,11 +187,11 @@ client.on("interactionCreate", async (i) => {
       if (i.customId === "next" && cup.page < maxPage) cup.page++;
       if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
 
-      await i.deferUpdate();
+      await i.deferUpdate(); // ✅ ONLY THIS
       return updateLeaderboard();
     }
 
-    // ===== DROPDOWN =====
+    // ================= DROPDOWN =================
     if (i.isStringSelectMenu()) {
       cup.currentGame = i.values[0];
       cup.page = 0;
@@ -199,17 +199,17 @@ client.on("interactionCreate", async (i) => {
       initGame(cup.currentGame);
       cup.games[cup.currentGame].previousRankings = {};
 
-      await i.deferUpdate();
+      await i.deferUpdate(); // ✅ ONLY THIS
       return updateLeaderboard();
     }
 
-    // ===== SLASH =====
+    // ================= SLASH =================
     if (!i.isChatInputCommand()) return;
 
-    // 🚨 IMPORTANT: defer ONCE and ONLY HERE
+    // 🚨 CRITICAL: defer IMMEDIATELY
     await i.deferReply();
 
-    // ===== START =====
+    // ================= START =================
     if (i.commandName === "start") {
       if (!isRef(i.member))
         return i.editReply("Ref only");
@@ -236,7 +236,7 @@ client.on("interactionCreate", async (i) => {
       return updateLeaderboard();
     }
 
-    // ===== SCORE =====
+    // ================= SCORE =================
     if (i.commandName === "score") {
       if (!isRef(i.member))
         return i.editReply("Ref only");
@@ -257,13 +257,13 @@ client.on("interactionCreate", async (i) => {
       return updateLeaderboard();
     }
 
-    // ===== END ROUND =====
+    // ================= END ROUND =================
     if (i.commandName === "end") {
       cup.round++;
       return i.editReply(`🏁 Round ${cup.round} started`);
     }
 
-    // ===== END CUP =====
+    // ================= END CUP =================
     if (i.commandName === "end-cup") {
       const sorted = Object.entries(cup.overall)
         .sort((a, b) => b[1].points - a[1].points)
