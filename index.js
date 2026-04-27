@@ -120,8 +120,13 @@ async function updateLeaderboard() {
 
     if (!desc) desc = "🌌 No competitors yet...";
 
+    const title =
+      gameKey === "overall"
+        ? "🏆 Overall Leaderboard"
+        : `🎮 ${gameKey} — Round ${cup.round}`;
+
     const embed = new EmbedBuilder()
-      .setTitle(`✨ COSMIC CUP — ROUND ${cup.round} ✨`)
+      .setTitle(title)
       .setDescription(desc)
       .setColor(0xA855F7)
       .setFooter({ text: `Page ${cup.page + 1}/${maxPage + 1}` });
@@ -149,6 +154,11 @@ async function updateLeaderboard() {
         .setLabel("⬅️")
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(cup.page === 0),
+
+      new ButtonBuilder()
+        .setCustomId("refresh")
+        .setLabel("🔄")
+        .setStyle(ButtonStyle.Primary),
 
       new ButtonBuilder()
         .setCustomId("next")
@@ -180,10 +190,15 @@ client.on("interactionCreate", async (i) => {
           ? cup.overall
           : cup.games[gameKey]?.leaderboard || {};
 
-      const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
+      const maxPage = Math.max(0, Math.ceil(Object.entries(data).length / 6) - 1);
 
       if (i.customId === "next") cup.page++;
       if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
+
+      if (i.customId === "refresh") {
+        await i.deferUpdate();
+        return updateLeaderboard();
+      }
 
       cup.page = Math.min(cup.page, maxPage);
 
@@ -216,6 +231,7 @@ client.on("interactionCreate", async (i) => {
       cup.page = 0;
 
       initGame(game);
+      cup.games[game].previousRankings = {}; // reset for new round
 
       if (!cup.leaderboardMessageId) {
         const msg = await i.channel.send({
