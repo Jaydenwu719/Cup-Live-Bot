@@ -197,13 +197,14 @@ client.on("interactionCreate", async (i) => {
     // ================= BUTTONS =================
     if (i.isButton()) {
       const gameKey = cup.currentGame || "overall";
+
       const data =
         gameKey === "overall"
           ? cup.overall
           : cup.games[gameKey]?.leaderboard || {};
 
-      const sorted = Object.keys(data);
-      const maxPage = Math.max(0, Math.ceil(sorted.length / 6) - 1);
+      const totalUsers = Object.keys(data).length;
+      const maxPage = Math.max(0, Math.ceil(totalUsers / 6) - 1);
 
       if (i.customId === "next") cup.page++;
       if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
@@ -216,11 +217,17 @@ client.on("interactionCreate", async (i) => {
 
     // ================= DROPDOWN =================
     if (i.isStringSelectMenu()) {
-      cup.currentGame = i.values[0];
+      const selected = i.values?.[0];
+      if (!selected) return i.deferUpdate();
+
+      cup.currentGame = selected;
       cup.page = 0;
 
       initGame(cup.currentGame);
-      cup.games[cup.currentGame].previousRankings = {};
+
+      if (cup.games[cup.currentGame]) {
+        cup.games[cup.currentGame].previousRankings = {};
+      }
 
       await i.deferUpdate();
       return updateLeaderboard();
@@ -266,7 +273,7 @@ client.on("interactionCreate", async (i) => {
       return updateLeaderboard();
     }
 
-    // ================= SCORE (NO MESSAGE + AUTO DELETE TEXT) =================
+    // ================= SCORE (SILENT + SAFE) =================
     if (i.commandName === "score") {
       if (!isRef(i.member)) return;
 
@@ -274,7 +281,7 @@ client.on("interactionCreate", async (i) => {
       const pts = i.options.getInteger("points");
       const game = cup.currentGame;
 
-      if (!game) return;
+      if (!game || game === null) return i.editReply("No active round");
 
       initGame(game);
       initPlayer(cup.games[game].leaderboard, user.id, user.username);
@@ -283,10 +290,8 @@ client.on("interactionCreate", async (i) => {
       cup.games[game].leaderboard[user.id].points += pts;
       cup.overall[user.id].points += pts;
 
-      // silent leaderboard update
-      updateLeaderboard();
+      await updateLeaderboard();
 
-      // temporary message (auto delete after 3 sec)
       const m = await i.channel.send({
         content: `${user.username} has scored`
       });
@@ -300,14 +305,22 @@ client.on("interactionCreate", async (i) => {
     if (i.commandName === "end") {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
+      const ended = cup.currentGame;
       cup.currentGame = null;
-      return i.editReply(`🏁 Round ${cup.round} ended`);
+
+      return i.editReply(`🏁 Round ${cup.round} ended — ${ended ?? "none"}`);
     }
 
     // ================= END CUP =================
     if (i.commandName === "end-cup") {
-      const sorted = Object.entries(cup.overall)
+      if (!isRef(i.member)) return i.editReply("Ref only");
+
+      const sorted = Object.entries(cup.overall || {})
         .sort((a, b) => b[1].points - a[1].points);
+
+      if (sorted.length === 0) {
+        return i.editReply("🏆 No scores yet.");
+      }
 
       const ranked = buildRanks(sorted);
 
