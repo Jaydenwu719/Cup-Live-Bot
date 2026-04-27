@@ -106,17 +106,15 @@ async function updateLeaderboard() {
         `✨ ${rank}.`;
 
       const prev = cup.games[gameKey].previousRankings[id];
-      let arrow = "";
+      const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
 
-      if (prev !== undefined) {
-        if (prev > rank) arrow = "⬆️";
-        else if (prev < rank) arrow = "⬇️";
-        else arrow = "➡️";
-      }
+if (i.customId === "next") {
+  if (cup.page < maxPage) cup.page++;
+}
 
-      cup.games[gameKey].previousRankings[id] = rank;
-
-      desc += `${medal} ${arrow} <@${id}> • **${data.points} pts**\n`;
+if (i.customId === "prev") {
+  cup.page = Math.max(0, cup.page - 1);
+}
     });
 
     if (!desc) desc = "🌌 No competitors yet...";
@@ -127,7 +125,15 @@ async function updateLeaderboard() {
       .setColor(0xA855F7)
       .setFooter({ text: `Page ${cup.page + 1}` });
 
-    await msg.edit({ embeds: [embed] });
+    const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
+
+    if (i.customId === "next") {
+    if (cup.page < maxPage) cup.page++;
+    }
+
+    if (i.customId === "prev") {
+    cup.page = Math.max(0, cup.page - 1);
+    }
 
   } catch (err) {
     console.log("Leaderboard error:", err.message);
@@ -141,8 +147,15 @@ client.on("interactionCreate", async (i) => {
 
     // ================= BUTTONS =================
     if (i.isButton()) {
-      if (i.customId === "next") cup.page++;
-      if (i.customId === "prev") cup.page = Math.max(0, cup.page - 1);
+      const maxPage = Math.max(0, Math.ceil(Object.keys(data).length / 6) - 1);
+
+    if (i.customId === "next") {
+    if (cup.page < maxPage) cup.page++;
+    }
+
+    if (i.customId === "prev") {
+    cup.page = Math.max(0, cup.page - 1);
+    }
 
       await i.deferUpdate();
       return updateLeaderboard();
@@ -165,7 +178,9 @@ client.on("interactionCreate", async (i) => {
     if (!i.isChatInputCommand()) return;
 
     // ALWAYS DEFER FIRST (THIS FIXES 10062)
-    await i.deferReply();
+    if (!i.deferred && !i.replied) {
+  await i.deferReply();
+  }
 
     // ---------------- START ----------------
     if (i.commandName === "start") {
@@ -222,13 +237,29 @@ client.on("interactionCreate", async (i) => {
   }
 });
 
+// ---------------- END ROUND ----------------
+if (i.commandName === "end") {
+  cup.round++;
+  return i.editReply(`🏁 Round ${cup.round} started`);
+}
+
+// ---------------- END CUP ----------------
+if (i.commandName === "end-cup") {
+  const sorted = Object.entries(cup.overall)
+    .sort((a, b) => b[1].points - a[1].points)
+    .map(([id, p], i) => `${i + 1}. <@${id}> — ${p.points} pts`)
+    .join("\n");
+
+  return i.editReply(`🏆 FINAL RESULTS\n\n${sorted}`);
+}
+
 setInterval(() => {
   updateLeaderboard();
 }, 10000);
 
 // ================= READY =================
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`BOT ONLINE: ${client.user.tag}`);
 });
 
