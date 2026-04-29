@@ -346,7 +346,7 @@ client.on("messageCreate", (message) => {
   const content = message.content.toLowerCase();
 
   if (content.includes("fatso")) {
-    message.channel.send("<:ogpoato:1485493654973059185>");
+    message.react("ogpoato:1485493654973059185").catch(() => {});
   }
 });
 
