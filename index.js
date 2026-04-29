@@ -321,6 +321,17 @@ const final = Object.entries(grouped)
   }
 });
 
+client.on("messageCreate", (message) => {
+  // ignore bots
+  if (message.author.bot) return;
+
+  const content = message.content.toLowerCase();
+
+  if (content.includes("fatso")) {
+    message.channel.send(":ogpoato:");
+  }
+});
+
 // ================= READY =================
 
 client.once("ready", () => {
