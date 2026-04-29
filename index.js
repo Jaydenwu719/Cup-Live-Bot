@@ -66,7 +66,7 @@ function initPlayer(obj, id, name) {
   if (!obj[id]) obj[id] = { name, points: 0 };
 }
 
-// ⭐ TIE RANK SYSTEM
+// ⭐ FIXED TIE RANK SYSTEM (STABLE + CORRECT)
 function buildRanks(sorted) {
   let rank = 1;
   let lastPoints = null;
@@ -75,7 +75,7 @@ function buildRanks(sorted) {
     if (i === 0) {
       rank = 1;
     } else if (player.points < lastPoints) {
-      rank++; // ONLY increment by 1 (dense ranking)
+      rank++; // dense ranking (no gaps)
     }
 
     lastPoints = player.points;
@@ -83,6 +83,7 @@ function buildRanks(sorted) {
     return { id, player, rank };
   });
 }
+
 // ================= LEADERBOARD =================
 
 async function updateLeaderboard() {
@@ -99,8 +100,14 @@ async function updateLeaderboard() {
         ? cup.overall
         : cup.games[gameKey]?.leaderboard || {};
 
+    // 🔥 FIX: stable sorting so ties NEVER shuffle
     const sorted = Object.entries(data)
-      .sort((a, b) => b[1].points - a[1].points);
+      .sort((a, b) => {
+        if (b[1].points !== a[1].points) {
+          return b[1].points - a[1].points;
+        }
+        return a[0].localeCompare(b[0]); // stable tie-breaker
+      });
 
     const ranked = buildRanks(sorted);
 
@@ -295,7 +302,12 @@ client.on("interactionCreate", async (i) => {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
       const sorted = Object.entries(cup.overall)
-        .sort((a, b) => b[1].points - a[1].points);
+        .sort((a, b) => {
+          if (b[1].points !== a[1].points) {
+            return b[1].points - a[1].points;
+          }
+          return a[0].localeCompare(b[0]);
+        });
 
       if (sorted.length === 0) {
         return i.editReply("🏆 No scores yet.");
@@ -303,19 +315,20 @@ client.on("interactionCreate", async (i) => {
 
       const ranked = buildRanks(sorted);
 
+      // 🔥 FIXED GROUPING (guaranteed correct ties)
       const grouped = {};
 
-for (const r of ranked) {
-  if (!grouped[r.rank]) grouped[r.rank] = [];
-  grouped[r.rank].push(r);
-}
+      for (const r of ranked) {
+        if (!grouped[r.rank]) grouped[r.rank] = [];
+        grouped[r.rank].push(r);
+      }
 
-const final = Object.entries(grouped)
-  .sort((a, b) => Number(a[0]) - Number(b[0]))
-  .map(([rank, players]) => {
-    return `#${rank} ${players.map(p => `<@${p.id}>`).join(", ")} — ${players[0].player.points} pts`;
-  })
-  .join("\n");
+      const final = Object.entries(grouped)
+        .sort((a, b) => Number(a[0]) - Number(b[0]))
+        .map(([rank, players]) => {
+          return `#${rank} ${players.map(p => `<@${p.id}>`).join(", ")} — ${players[0].player.points} pts`;
+        })
+        .join("\n");
 
       return i.editReply(`🏆 FINAL RESULTS\n\n${final}`);
     }
@@ -325,13 +338,14 @@ const final = Object.entries(grouped)
   }
 });
 
+// ================= MESSAGE TRIGGER =================
+
 client.on("messageCreate", (message) => {
   if (message.author.bot) return;
 
   const content = message.content.toLowerCase();
 
   if (content.includes("fatso")) {
-    console.log("TRIGGERED"); // debug
     message.channel.send("<:ogpoato:1485493654973059185>");
   }
 });
