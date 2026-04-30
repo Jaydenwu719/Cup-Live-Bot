@@ -28,7 +28,9 @@ let cup = {
 
 // ================= EXPRESS =================
 
-app.get("/data", (req, res) => res.json(cup));
+app.get("/data", (req, res) => {
+  res.status(200).send("OK");
+});
 
 app.listen(PORT, () => {
   console.log("SERVER RUNNING:", PORT);
@@ -75,7 +77,7 @@ function buildRanks(sorted) {
     if (i === 0) {
       rank = 1;
     } else if (player.points < lastPoints) {
-      rank++; // dense ranking (no gaps)
+      rank++; // only increase when points go down
     }
 
     lastPoints = player.points;
@@ -83,7 +85,6 @@ function buildRanks(sorted) {
     return { id, player, rank };
   });
 }
-
 // ================= LEADERBOARD =================
 
 async function updateLeaderboard() {
@@ -101,13 +102,12 @@ async function updateLeaderboard() {
         : cup.games[gameKey]?.leaderboard || {};
 
     // 🔥 FIX: stable sorting so ties NEVER shuffle
-    const sorted = Object.entries(data)
-      .sort((a, b) => {
-        if (b[1].points !== a[1].points) {
-          return b[1].points - a[1].points;
-        }
-        return a[0].localeCompare(b[0]); // stable tie-breaker
-      });
+    const sorted = Object.entries(data).sort((a, b) => {
+  if (b[1].points !== a[1].points) {
+    return b[1].points - a[1].points;
+  }
+  return a[0].localeCompare(b[0]); // keeps ties stable
+});
 
     const ranked = buildRanks(sorted);
 
@@ -301,13 +301,12 @@ client.on("interactionCreate", async (i) => {
     if (i.commandName === "end-cup") {
       if (!isRef(i.member)) return i.editReply("Ref only");
 
-      const sorted = Object.entries(cup.overall)
-        .sort((a, b) => {
-          if (b[1].points !== a[1].points) {
-            return b[1].points - a[1].points;
-          }
-          return a[0].localeCompare(b[0]);
-        });
+      const sorted = Object.entries(cup.overall).sort((a, b) => {
+  if (b[1].points !== a[1].points) {
+    return b[1].points - a[1].points;
+  }
+  return a[0].localeCompare(b[0]);
+});
 
       if (sorted.length === 0) {
         return i.editReply("🏆 No scores yet.");
@@ -346,7 +345,7 @@ client.on("messageCreate", (message) => {
   const content = message.content.toLowerCase();
 
   if (content.includes("fatso")) {
-    message.react("ogpoato:1485493654973059185").catch(() => {});
+    message.react("1485493654973059185").catch(() => {});
   }
 });
 
