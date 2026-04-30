@@ -26,7 +26,7 @@ let cup = {
   round: 0
 };
 
-let reminders = [];
+let updatingLeaderboard = false;
 
 // ================= EXPRESS =================
 
@@ -89,9 +89,15 @@ function buildRanks(sorted) {
 }
 // ================= LEADERBOARD =================
 
-async function updateLeaderboard() {
+  async function updateLeaderboard() {
+    if (updatingLeaderboard) return;
+    updatingLeaderboard = true;
+
   try {
-    if (!cup.leaderboardMessageId) return;
+    if (!cup.leaderboardMessageId) {
+    updatingLeaderboard = false;
+    return;
+  }
 
     const channel = await client.channels.fetch(cup.leaderboardChannelId);
     const msg = await channel.messages.fetch(cup.leaderboardMessageId);
@@ -185,26 +191,12 @@ async function updateLeaderboard() {
       components: [selectRow, buttonRow]
     });
 
+    updatingLeaderboard = false;
+
   } catch (err) {
     console.log("Leaderboard error:", err.message);
+    updatingLeaderboard = false;
   }
-}
-
-// ================= REMINDER SYSTEM =================
-
-function scheduleReminder(reminder) {
-  const delay = reminder.time - Date.now();
-
-  if (delay <= 0) return;
-
-  setTimeout(async () => {
-    try {
-      const user = await client.users.fetch(reminder.userId);
-      user.send(`⏰ Reminder: ${reminder.text}`).catch(() => {});
-    } catch (err) {
-      console.log("Reminder error:", err);
-    }
-  }, delay);
 }
 
 // ================= EVENTS =================
@@ -249,29 +241,6 @@ client.on("interactionCreate", async (i) => {
     if (!i.isChatInputCommand()) return;
 
     await i.deferReply();
-
-    // ================= REMIND =================
-  if (i.commandName === "remind") {
-  const time = i.options.getString("time");
-  const text = i.options.getString("text");
-
-  let ms = 0;
-
-  if (time.endsWith("s")) ms = parseInt(time) * 1000;
-  if (time.endsWith("m")) ms = parseInt(time) * 60 * 1000;
-  if (time.endsWith("h")) ms = parseInt(time) * 60 * 60 * 1000;
-
-  const reminder = {
-    userId: i.user.id,
-    text,
-    time: Date.now() + ms
-  };
-
-  reminders.push(reminder);
-  scheduleReminder(reminder);
-
-  return i.editReply(`⏰ I'll remind you in ${time}`);
-  }
 
     // ===== START =====
     if (i.commandName === "start") {
@@ -320,7 +289,7 @@ client.on("interactionCreate", async (i) => {
       cup.games[game].leaderboard[user.id].points += pts;
       cup.overall[user.id].points += pts;
 
-      updateLeaderboard();
+      await updateLeaderboard();
 
       const m = await i.channel.send({
         content: `${user.username} has scored`

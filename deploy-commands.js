@@ -66,22 +66,7 @@ new SlashCommandBuilder()
     option.setName('loser')
       .setDescription('Loser of the match')
       .setRequired(true)
-  ),
-
-  new SlashCommandBuilder()
-  .setName('remind')
-  .setDescription('Set a reminder')
-  .addStringOption(option =>
-    option.setName('time')
-      .setDescription('Time like 10s, 5m, 1h')
-      .setRequired(true)
-  )
-  .addStringOption(option =>
-    option.setName('text')
-      .setDescription('What to remind you about')
-      .setRequired(true)
-  )
-  
+  )  
 ].map(cmd => cmd.toJSON());
 
 // ================= REST =================
