@@ -347,6 +347,10 @@ client.on("messageCreate", (message) => {
   if (content.includes("fatso")) {
     message.react("1485493654973059185").catch(() => {});
   }
+
+  if (content.includes("mottu")) {
+    message.react("1485493654973059185").catch(() => {});
+  }
 });
 
 // ================= READY =================
