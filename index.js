@@ -26,6 +26,8 @@ let cup = {
   round: 0
 };
 
+let reminders = [];
+
 // ================= EXPRESS =================
 
 app.get("/data", (req, res) => {
@@ -188,6 +190,23 @@ async function updateLeaderboard() {
   }
 }
 
+// ================= REMINDER SYSTEM =================
+
+function scheduleReminder(reminder) {
+  const delay = reminder.time - Date.now();
+
+  if (delay <= 0) return;
+
+  setTimeout(async () => {
+    try {
+      const user = await client.users.fetch(reminder.userId);
+      user.send(`⏰ Reminder: ${reminder.text}`).catch(() => {});
+    } catch (err) {
+      console.log("Reminder error:", err);
+    }
+  }, delay);
+}
+
 // ================= EVENTS =================
 
 client.on("interactionCreate", async (i) => {
@@ -230,6 +249,29 @@ client.on("interactionCreate", async (i) => {
     if (!i.isChatInputCommand()) return;
 
     await i.deferReply();
+
+    // ================= REMIND =================
+  if (i.commandName === "remind") {
+  const time = i.options.getString("time");
+  const text = i.options.getString("text");
+
+  let ms = 0;
+
+  if (time.endsWith("s")) ms = parseInt(time) * 1000;
+  if (time.endsWith("m")) ms = parseInt(time) * 60 * 1000;
+  if (time.endsWith("h")) ms = parseInt(time) * 60 * 60 * 1000;
+
+  const reminder = {
+    userId: i.user.id,
+    text,
+    time: Date.now() + ms
+  };
+
+  reminders.push(reminder);
+  scheduleReminder(reminder);
+
+  return i.editReply(`⏰ I'll remind you in ${time}`);
+  }
 
     // ===== START =====
     if (i.commandName === "start") {
@@ -308,6 +350,7 @@ client.on("interactionCreate", async (i) => {
   return a[0].localeCompare(b[0]);
 });
 
+
       if (sorted.length === 0) {
         return i.editReply("🏆 No scores yet.");
       }
@@ -344,15 +387,14 @@ client.on("messageCreate", (message) => {
 
   const content = message.content.toLowerCase();
 
-  if (content.includes("fatso")) {
-    message.react("1485493654973059185").catch(() => {});
-  }
-
-  if (content.includes("mottu")) {
+  if (
+    content.includes("fatso") ||
+    content.includes("mottu") ||
+    content.includes("motu")
+  ) {
     message.react("1485493654973059185").catch(() => {});
   }
 });
-
 // ================= READY =================
 
 client.once("ready", () => {
