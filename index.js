@@ -269,36 +269,39 @@ client.on("interactionCreate", async (i) => {
       }
 
       await i.editReply(`🚀 Round ${cup.round} started — ${game}`);
-      return updateLeaderboard();
+      updateLeaderboard(); // no await
+      return;
     }
 
     // ===== SCORE =====
     if (i.commandName === "score") {
-      if (!isRef(i.member)) return;
+  if (!isRef(i.member)) return;
 
-      const user = i.options.getUser("user");
-      const pts = i.options.getInteger("points");
-      const game = cup.currentGame;
+  const user = i.options.getUser("user");
+  const pts = i.options.getInteger("points");
+  const game = cup.currentGame;
 
-      if (!game) return i.deleteReply().catch(() => {});
+  if (!game) return i.deleteReply().catch(() => {});
 
-      initGame(game);
-      initPlayer(cup.games[game].leaderboard, user.id, user.username);
-      initPlayer(cup.overall, user.id, user.username);
+  initGame(game);
+  initPlayer(cup.games[game].leaderboard, user.id, user.username);
+  initPlayer(cup.overall, user.id, user.username);
 
-      cup.games[game].leaderboard[user.id].points += pts;
-      cup.overall[user.id].points += pts;
+  cup.games[game].leaderboard[user.id].points += pts;
+  cup.overall[user.id].points += pts;
 
-      await updateLeaderboard();
+  await i.deleteReply().catch(() => {}); // finish interaction FIRST
 
-      const m = await i.channel.send({
-        content: `${user.username} has scored`
-      });
+  updateLeaderboard(); // no await
 
-      setTimeout(() => m.delete().catch(() => {}), 3000);
+  const m = await i.channel.send({
+    content: `${user.username} has scored`
+  });
 
-      return i.deleteReply().catch(() => {});
-    }
+  setTimeout(() => m.delete().catch(() => {}), 3000);
+
+  return;
+}
 
     // ===== END ROUND =====
     if (i.commandName === "end") {
