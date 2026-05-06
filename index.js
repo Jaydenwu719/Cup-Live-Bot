@@ -35,13 +35,13 @@ app.get("/data", (req, res) => {
   res.status(200).send("OK");
 });
 
-if (!global.serverRunning) {
-  app.listen(PORT, () => {
-    console.log("SERVER RUNNING:", PORT);
-  });
-  global.serverRunning = true;
-}
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.log("SERVER RUNNING:", server.address().port);
+});
 
+server.on("error", (err) => {
+  console.log("SERVER ERROR:", err.message);
+});
 // ================= DISCORD =================
 
 const client = new Client({
@@ -306,7 +306,9 @@ client.on("interactionCreate", async (i) => {
   const pts = i.options.getInteger("points");
   const game = cup.currentGame;
 
-  if (!game) return i.deleteReply().catch(() => {});
+  if (!game) {
+  return i.reply({ content: "No game running", ephemeral: true }).catch(() => {});
+  }
 
   initGame(game);
   initPlayer(cup.games[game].leaderboard, user.id, user.username);
