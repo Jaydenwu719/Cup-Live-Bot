@@ -27,6 +27,7 @@ let cup = {
 };
 
 let updatingLeaderboard = false;
+let leaderboardQueue = Promise.resolve();
 
 // ================= EXPRESS =================
 
@@ -34,9 +35,12 @@ app.get("/data", (req, res) => {
   res.status(200).send("OK");
 });
 
-app.listen(PORT, () => {
-  console.log("SERVER RUNNING:", PORT);
-});
+if (!global.serverRunning) {
+  app.listen(PORT, () => {
+    console.log("SERVER RUNNING:", PORT);
+  });
+  global.serverRunning = true;
+}
 
 // ================= DISCORD =================
 
@@ -72,38 +76,53 @@ function initPlayer(obj, id, name) {
 
 // ⭐ FIXED TIE RANK SYSTEM (STABLE + CORRECT)
 function buildRanks(sorted) {
-  let rank = 1;
+  const ranks = new Map();
+  let currentRank = 1;
   let lastPoints = null;
 
-  return sorted.map(([id, player], i) => {
+  for (let i = 0; i < sorted.length; i++) {
+    const [id, player] = sorted[i];
+
     if (i === 0) {
-      rank = 1;
+      currentRank = 1;
     } else if (player.points < lastPoints) {
-      rank++; // only increase when points go down
+      currentRank = i + 1; // true ranking jump
     }
 
-    lastPoints = player.points;
+    ranks.set(id, {
+      id,
+      player,
+      rank: currentRank
+    });
 
-    return { id, player, rank };
-  });
+    lastPoints = player.points;
+  }
+
+  return Array.from(ranks.values());
 }
 // ================= LEADERBOARD =================
 
-  async function updateLeaderboard() {
-    if (updatingLeaderboard) return;
-    updatingLeaderboard = true;
+    async function updateLeaderboard() {
+  if (updatingLeaderboard) return;
+  updatingLeaderboard = true;
 
   try {
-    if (!cup.leaderboardMessageId) {
-    updatingLeaderboard = false;
-    return;
-  }
+    if (!cup.leaderboardMessageId || !cup.leaderboardChannelId) {
+      updatingLeaderboard = false;
+      return;
+    }
 
     const channel = await client.channels.fetch(cup.leaderboardChannelId).catch(() => null);
-    if (!channel) return updatingLeaderboard = false;
+    if (!channel) {
+      updatingLeaderboard = false;
+      return;
+    }
 
     const msg = await channel.messages.fetch(cup.leaderboardMessageId).catch(() => null);
-    if (!msg) return updatingLeaderboard = false;
+    if (!msg) {
+      updatingLeaderboard = false;
+      return;
+    }
 
     const gameKey = cup.currentGame || "overall";
 
@@ -112,27 +131,27 @@ function buildRanks(sorted) {
         ? cup.overall
         : cup.games[gameKey]?.leaderboard || {};
 
-    // 🔥 FIX: stable sorting so ties NEVER shuffle
+    // safe sorting
     const sorted = Object.entries(data).sort((a, b) => {
-  if (b[1].points !== a[1].points) {
-    return b[1].points - a[1].points;
-  }
-  return a[0].localeCompare(b[0]); // keeps ties stable
-});
+      if (b[1].points !== a[1].points) {
+        return b[1].points - a[1].points;
+      }
+      return a[0].localeCompare(b[0]);
+    });
 
     const ranked = buildRanks(sorted);
 
     const perPage = 6;
     const maxPage = Math.max(0, Math.ceil(ranked.length / perPage) - 1);
 
-    cup.page = Math.min(cup.page, maxPage);
+    cup.page = Math.min(Math.max(cup.page, 0), maxPage);
 
     const start = cup.page * perPage;
     const slice = ranked.slice(start, start + perPage);
 
     let desc = "";
 
-    slice.forEach(({ id, player, rank }) => {
+    for (const { id, player, rank } of slice) {
       const medal =
         rank === 1 ? "🥇" :
         rank === 2 ? "🥈" :
@@ -140,7 +159,7 @@ function buildRanks(sorted) {
         `✨ ${rank}.`;
 
       desc += `${medal} <@${id}> • **${player.points} pts**\n`;
-    });
+    }
 
     if (!desc) desc = "🌌 No competitors yet...";
 
@@ -167,7 +186,7 @@ function buildRanks(sorted) {
       new StringSelectMenuBuilder()
         .setCustomId("leaderboard_select")
         .setPlaceholder("Select leaderboard")
-        .addOptions(options)
+        .addOptions(options.slice(0, 25)) // Discord hard limit safety
     );
 
     const buttonRow = new ActionRowBuilder().addComponents(
@@ -194,14 +213,12 @@ function buildRanks(sorted) {
       components: [selectRow, buttonRow]
     });
 
-    updatingLeaderboard = false;
-
   } catch (err) {
-    console.log("Leaderboard error:", err.message);
+    console.log("Leaderboard error:", err);
+  } finally {
     updatingLeaderboard = false;
   }
 }
-
 // ================= EVENTS =================
 
 client.on("interactionCreate", async (i) => {
