@@ -100,6 +100,11 @@ function buildRanks(sorted) {
 
   return Array.from(ranks.values());
 }
+
+function queueLeaderboardUpdate() {
+  leaderboardQueue = leaderboardQueue.then(() => updateLeaderboard());
+}
+
 // ================= LEADERBOARD =================
 
     async function updateLeaderboard() {
@@ -239,13 +244,13 @@ client.on("interactionCreate", async (i) => {
 
       if (i.customId === "refresh") {
         await i.deferUpdate();
-        return updateLeaderboard();
+        return queueLeaderboardUpdate();
       }
 
       cup.page = Math.min(cup.page, maxPage);
 
       await i.deferUpdate();
-      return updateLeaderboard();
+      return queueLeaderboardUpdate();
     }
 
     // ===== DROPDOWN =====
@@ -254,7 +259,7 @@ client.on("interactionCreate", async (i) => {
       cup.page = 0;
 
       await i.deferUpdate();
-      return updateLeaderboard();
+      return queueLeaderboardUpdate();
     }
 
     // ===== SLASH =====
@@ -289,7 +294,7 @@ client.on("interactionCreate", async (i) => {
       }
 
       await i.editReply(`🚀 Round ${cup.round} started — ${game}`);
-      setTimeout(() => updateLeaderboard(), 100); // small delay
+      queueLeaderboardUpdate();
       return;
     }
 
@@ -312,7 +317,7 @@ client.on("interactionCreate", async (i) => {
 
   await i.deleteReply().catch(() => {}); // finish interaction FIRST
 
-  updateLeaderboard(); // no await
+  queueLeaderboardUpdate(); // no await
 
   const m = await i.channel.send({
     content: `${user.username} has scored`
