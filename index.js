@@ -99,8 +99,11 @@ function buildRanks(sorted) {
     return;
   }
 
-    const channel = await client.channels.fetch(cup.leaderboardChannelId);
-    const msg = await channel.messages.fetch(cup.leaderboardMessageId);
+    const channel = await client.channels.fetch(cup.leaderboardChannelId).catch(() => null);
+    if (!channel) return updatingLeaderboard = false;
+
+    const msg = await channel.messages.fetch(cup.leaderboardMessageId).catch(() => null);
+    if (!msg) return updatingLeaderboard = false;
 
     const gameKey = cup.currentGame || "overall";
 
@@ -269,7 +272,7 @@ client.on("interactionCreate", async (i) => {
       }
 
       await i.editReply(`🚀 Round ${cup.round} started — ${game}`);
-      updateLeaderboard(); // no await
+      setTimeout(() => updateLeaderboard(), 100); // small delay
       return;
     }
 
@@ -312,40 +315,49 @@ client.on("interactionCreate", async (i) => {
     }
 
     // ===== END CUP =====
-    if (i.commandName === "end-cup") {
-      if (!isRef(i.member)) return i.editReply("Ref only");
+if (i.commandName === "end-cup") {
+  const showLeaderboard = i.options.getBoolean("leaderboard") ?? true;
+  if (!isRef(i.member)) return i.editReply("Ref only");
 
-      const sorted = Object.entries(cup.overall).sort((a, b) => {
-  if (b[1].points !== a[1].points) {
-    return b[1].points - a[1].points;
-  }
-  return a[0].localeCompare(b[0]);
-});
-
-
-      if (sorted.length === 0) {
-        return i.editReply("🏆 No scores yet.");
-      }
-
-      const ranked = buildRanks(sorted);
-
-      // 🔥 FIXED GROUPING (guaranteed correct ties)
-      const grouped = {};
-
-      for (const r of ranked) {
-        if (!grouped[r.rank]) grouped[r.rank] = [];
-        grouped[r.rank].push(r);
-      }
-
-      const final = Object.entries(grouped)
-        .sort((a, b) => Number(a[0]) - Number(b[0]))
-        .map(([rank, players]) => {
-          return `#${rank} ${players.map(p => `<@${p.id}>`).join(", ")} — ${players[0].player.points} pts`;
-        })
-        .join("\n");
-
-      return i.editReply(`🏆 FINAL RESULTS\n\n${final}`);
+  const sorted = Object.entries(cup.overall).sort((a, b) => {
+    if (b[1].points !== a[1].points) {
+      return b[1].points - a[1].points;
     }
+    return a[0].localeCompare(b[0]);
+  });
+
+  if (sorted.length === 0) {
+    return i.editReply("🏆 No scores yet.");
+  }
+
+  const ranked = buildRanks(sorted);
+
+  const grouped = {};
+  for (const r of ranked) {
+    if (!grouped[r.rank]) grouped[r.rank] = [];
+    grouped[r.rank].push(r);
+  }
+
+  const final = Object.entries(grouped)
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([rank, players]) => {
+      return `#${rank} ${players.map(p => `<@${p.id}>`).join(", ")} — ${players[0].player.points} pts`;
+    })
+    .join("\n");
+
+  // 🔥 RESET FIRST
+  cup.overall = {};
+  cup.games = {};
+  cup.currentGame = null;
+  cup.page = 0;
+  cup.round = 0;
+
+  if (!showLeaderboard) {
+    return i.editReply("🏁 Cup ended.");
+  }
+
+  return i.editReply(`🏆 FINAL RESULTS\n\n${final}`);
+}
 
   } catch (err) {
     console.log("Interaction error:", err);

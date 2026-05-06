@@ -48,9 +48,14 @@ const commands = [
     .setName('end')
     .setDescription('End current round'),
 
-  new SlashCommandBuilder()
-    .setName('end-cup')
-    .setDescription('End full cup and show results'),
+new SlashCommandBuilder()
+  .setName('end-cup')
+  .setDescription('End full cup and show results')
+  .addBooleanOption(option =>
+    option.setName('leaderboard')
+      .setDescription('Show final leaderboard?')
+      .setRequired(false)
+  ),
 
 new SlashCommandBuilder()
   .setName('match')
